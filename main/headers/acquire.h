@@ -5,6 +5,7 @@
 //#include "bmp390.h"
 #include "icm20948.h"
 #include "icm20948_i2c.h"
+#include "icm20948_api.h"
 
 #define G 9.80665
 

@@ -57,10 +57,10 @@ static bool parse_gpgga_line(char *line, data_t *data) {
     }
     // this will check if the sentence received by the gps is $GPGGA
 
-    char *fields[15] = {0}; 
+    char *fields[15] = {0};
     size_t field_count = 0; // auxiliary variable used by strtok_r.
     // necessary because strtok_r needs context to remember where it left off.
-    char *context = NULL;    
+    char *context = NULL;
 
     for (char *field = strtok_r(line, ",", &context);
          field && field_count < 15;
