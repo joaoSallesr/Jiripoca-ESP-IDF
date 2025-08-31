@@ -2,74 +2,74 @@
 
 static const char *TAG_ACQ = "Acquire";
 
-void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
-{
-    // init device
-    bmp390_init(i2c0_bus_hdl, &dev_cfg, &dev_hdl);
-    if (dev_hdl == NULL) {
-        ESP_LOGE(APP_TAG, "bmp390 handle init failed");
-        assert(dev_hdl);
-    }
+//void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
+//{
+//    // init device
+//    bmp390_init(i2c0_bus_hdl, &dev_cfg, &dev_hdl);
+//    if (dev_hdl == NULL) {
+//        ESP_LOGE(APP_TAG, "bmp390 handle init failed");
+//        assert(dev_hdl);
+//    }
+//
+//    /* configuration registers */
+//    bmp390_power_control_register_t     power_ctrl_reg;
+//    bmp390_configuration_register_t     config_reg;
+//    bmp390_oversampling_register_t      oversampling_reg;
+//    bmp390_output_data_rate_register_t  output_data_rate_reg;
+//    bmp390_interrupt_control_register_t interrupt_ctrl_reg;
+//
+//    /* attempt to read configuration register */
+//    bmp390_get_configuration_register(dev_hdl, &config_reg);
+//
+//    /* attempt to read oversampling register */
+//    bmp390_get_oversampling_register(dev_hdl, &oversampling_reg);
+//
+//    /* attempt to read to power control register */
+//    bmp390_get_power_control_register(dev_hdl, &power_ctrl_reg);
+//
+//    /* attempt to read to output data rate register */
+//    bmp390_get_output_data_rate_register(dev_hdl, &output_data_rate_reg);
+//
+//    /* attempt to read to interrupt control register */
+//    bmp390_get_interrupt_control_register(dev_hdl, &interrupt_ctrl_reg);
+//
+//
+//    ESP_LOGI(APP_TAG, "Configuration (0x%02x): %s", config_reg.reg,           uint8_to_binary(config_reg.reg));
+//    ESP_LOGI(APP_TAG, "Oversampling  (0x%02x): %s", oversampling_reg.reg,     uint8_to_binary(oversampling_reg.reg));
+//    ESP_LOGI(APP_TAG, "Data Rate     (0x%02x): %s", output_data_rate_reg.reg, uint8_to_binary(output_data_rate_reg.reg));
+//    ESP_LOGI(APP_TAG, "Power Control (0x%02x): %s", power_ctrl_reg.reg,       uint8_to_binary(power_ctrl_reg.reg));
+//    ESP_LOGI(APP_TAG, "Int Control   (0x%02x): %s", interrupt_ctrl_reg.reg,   uint8_to_binary(interrupt_ctrl_reg.reg));
+//
+//    if(interrupt_ctrl_reg.bits.irq_data_ready_enabled)
+//        ESP_LOGE(APP_TAG, "bmp390 irq data ready is enabled");
+//}
 
-    /* configuration registers */
-    bmp390_power_control_register_t     power_ctrl_reg;
-    bmp390_configuration_register_t     config_reg;
-    bmp390_oversampling_register_t      oversampling_reg;
-    bmp390_output_data_rate_register_t  output_data_rate_reg;
-    bmp390_interrupt_control_register_t interrupt_ctrl_reg;
-
-    /* attempt to read configuration register */
-    bmp390_get_configuration_register(dev_hdl, &config_reg);
-
-    /* attempt to read oversampling register */
-    bmp390_get_oversampling_register(dev_hdl, &oversampling_reg);
-
-    /* attempt to read to power control register */
-    bmp390_get_power_control_register(dev_hdl, &power_ctrl_reg);
-
-    /* attempt to read to output data rate register */
-    bmp390_get_output_data_rate_register(dev_hdl, &output_data_rate_reg);
-
-    /* attempt to read to interrupt control register */
-    bmp390_get_interrupt_control_register(dev_hdl, &interrupt_ctrl_reg);
-
-
-    ESP_LOGI(APP_TAG, "Configuration (0x%02x): %s", config_reg.reg,           uint8_to_binary(config_reg.reg));
-    ESP_LOGI(APP_TAG, "Oversampling  (0x%02x): %s", oversampling_reg.reg,     uint8_to_binary(oversampling_reg.reg));
-    ESP_LOGI(APP_TAG, "Data Rate     (0x%02x): %s", output_data_rate_reg.reg, uint8_to_binary(output_data_rate_reg.reg));
-    ESP_LOGI(APP_TAG, "Power Control (0x%02x): %s", power_ctrl_reg.reg,       uint8_to_binary(power_ctrl_reg.reg));
-    ESP_LOGI(APP_TAG, "Int Control   (0x%02x): %s", interrupt_ctrl_reg.reg,   uint8_to_binary(interrupt_ctrl_reg.reg));
-
-    if(interrupt_ctrl_reg.bits.irq_data_ready_enabled)
-        ESP_LOGE(APP_TAG, "bmp390 irq data ready is enabled");
-}
-
-void acquire_bmp390(data_t *data, bmp390_handle_t* dev_hdl)
-{
-    ESP_LOGI(APP_TAG, "######################## BMP390 - START #########################");
-        //
-        
-        // sensor readings
-        if (bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure); != ESP_OK)
-            ESP_LOGE(APP_TAG, "bmp390 device read failed (%s)", esp_err_to_name(result));
-        else {
-            pressure = pressure / 100;
-            ESP_LOGI(APP_TAG, "air temperature:     %.2f °C", temperature);
-            ESP_LOGI(APP_TAG, "barometric pressure: %.2f hPa", pressure);
-        }
-
-        // necessario revisar
-        float temp_altitude = 0;
-        BMP280 altitude calculation (barometric formula)
-        temp_altitude = 44330 * (1 - powf(data->pressure / 101325, 1 / 5.255));
-
-        if (temp_altitude > data->max_altitude)
-            data->max_altitude = temp_altitude;
-        data->bmp_altitude = temp_altitude;
-        
-        //
-    ESP_LOGI(APP_TAG, "######################## BMP390 - END ###########################");
-}
+//void acquire_bmp390(data_t *data, bmp390_handle_t* dev_hdl)
+//{
+//    ESP_LOGI(APP_TAG, "######################## BMP390 - START #########################");
+//        //
+//        
+//        // sensor readings
+//        if (bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure); != ESP_OK)
+//            ESP_LOGE(APP_TAG, "bmp390 device read failed (%s)", esp_err_to_name(result));
+//        else {
+//            pressure = pressure / 100;
+//            ESP_LOGI(APP_TAG, "air temperature:     %.2f °C", temperature);
+//            ESP_LOGI(APP_TAG, "barometric pressure: %.2f hPa", pressure);
+//        }
+//
+//        // necessario revisar
+//        float temp_altitude = 0;
+//        BMP280 altitude calculation (barometric formula)
+//        temp_altitude = 44330 * (1 - powf(data->pressure / 101325, 1 / 5.255));
+//
+//        if (temp_altitude > data->max_altitude)
+//            data->max_altitude = temp_altitude;
+//        data->bmp_altitude = temp_altitude;
+//        
+//        //
+//    ESP_LOGI(APP_TAG, "######################## BMP390 - END ###########################");
+//}
 
 // status_checks checks if the rocket is flying, motor is cutoff, or landed
 void status_checks(data_t *data)
@@ -144,9 +144,9 @@ void task_acquire(void *pvParameters)
     data_t data = {0};
 
     // init bmp390
-    bmp390_config_t dev_cfg = I2C_BMP390_CONFIG_DEFAULT;
-    bmp390_handle_t dev_hdl;
-    init_bmp390(&dev_cfg, &dev_hdl);
+    //bmp390_config_t dev_cfg = I2C_BMP390_CONFIG_DEFAULT;
+    //bmp390_handle_t dev_hdl;
+    //init_bmp390(&dev_cfg, &dev_hdl);
 
 
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -158,7 +158,7 @@ void task_acquire(void *pvParameters)
         data.status = STATUS;
         xSemaphoreGive(xStatusMutex);
 
-        acquire_bmp390(&data, &dev_bmp);
+        //acquire_bmp390(&data, &dev_bmp);
 
         status_checks(&data);
 
@@ -179,6 +179,6 @@ void task_acquire(void *pvParameters)
         // REDUCE AFTER OPTIMIZING CODE
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    bmp390_delete(dev_hdl);
+    //bmp390_delete(dev_hdl);
     vTaskDelete(NULL);
 }
