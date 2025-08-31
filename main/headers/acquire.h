@@ -3,6 +3,8 @@
 
 #include "common.h"
 //#include "bmp390.h"
+#include "icm20948.h"
+#include "icm20948_i2c.h"
 
 #define G 9.80665
 
