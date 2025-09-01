@@ -13,14 +13,12 @@ void init_icm20948()
 	                            .sda_pullup_en = GPIO_PULLUP_ENABLE,
 	                            .scl_io_num = (gpio_num_t) I2C_SCL,
 	                            .scl_pullup_en = GPIO_PULLUP_ENABLE,
-	                            .master.clk_speed = 400000,
-	                            .clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL
-    };
-
+	                            .master.clk_speed = I2C_MASTER_FREQ_HZ,
+	                            .clk_flags = 0 };
+    
     //standard ICM20948 config from component example -> revise later
     icm0948_config_i2c_t icm_config = { .i2c_port = I2C_MASTER_NUM,
-	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD1
-    }; 
+	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD1 }; 
 }
 //void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
 //{
