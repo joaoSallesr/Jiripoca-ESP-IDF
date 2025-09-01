@@ -7,7 +7,7 @@ static const char *TAG_ACQ = "Acquire";
 static const char *TAG_ICM = "ICM20948";
 void init_icm20948()
 {
-    //standard ic2 bus config from component example -> revise later
+    // standard ic2 bus config from component example -> revise later
     i2c_config_t bus_config = { .mode = I2C_MODE_MASTER,
 	                            .sda_io_num = (gpio_num_t) I2C_SDA,
 	                            .sda_pullup_en = GPIO_PULLUP_ENABLE,
@@ -16,9 +16,26 @@ void init_icm20948()
 	                            .master.clk_speed = I2C_MASTER_FREQ_HZ,
 	                            .clk_flags = 0 };
     
-    //standard ICM20948 config from component example -> revise later
+    // standard ICM20948 config from component example -> revise later
     icm0948_config_i2c_t icm_config = { .i2c_port = I2C_MASTER_NUM,
 	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD1 }; 
+}
+
+void acquire_icm20948(data_t *data, icm20948_agmt_t *icm)
+{
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    if (icm20948_get_agmt(&icm, &icm) != ICM_20948_STAT_OK) 
+        ESP_LOGE(TAG_ICM, "Failed to read ICM20948");
+
+    data->accel_x = icm->acc.axes.x;
+    data->accel_y = icm->acc.axes.y;
+    data->accel_z = icm->acc.axes.z;
+    data->rotation_x = icm->gyr.axes.x;
+    data->rotation_y = icm->gyr.axes.y;
+    data->rotation_z = icm->gyr.axes.z;
+    
+    xSemaphoreGive(xI2CMutex);
+    vTaskDelay(0); // why?
 }
 //void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
 //{
