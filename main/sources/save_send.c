@@ -9,7 +9,7 @@ static const char *TAG_LORA = "LoRa";
 void task_sd(void *pvParameters)
 {
     file_counter_t counter = *(file_counter_t *)pvParameters;
-    esp_err_t ret;
+    esp_err_t errSD;
 
     // Options for mounting the filesystem.
     // If format_if_mount_failed is set to true, SD card will be partitioned and
@@ -39,8 +39,8 @@ void task_sd(void *pvParameters)
         .quadhd_io_num = -1,
         .max_transfer_sz = 4000,
     };
-    ret = spi_bus_initialize(host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
-    if (ret != ESP_OK)
+    errSD = spi_bus_initialize(host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
+    if (errSD != ESP_OK)
     {
         ESP_LOGE(TAG_SD, "Failed to initialize bus.");
         return;
@@ -51,11 +51,11 @@ void task_sd(void *pvParameters)
     slot_config.host_id = host.slot;
 
     ESP_LOGI(TAG_SD, "Mounting filesystem");
-    ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &card);
+    errSD = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &card);
 
-    if (ret != ESP_OK)
+    if (errSD != ESP_OK)
     {
-        if (ret == ESP_FAIL)
+        if (errSD == ESP_FAIL)
         {
             ESP_LOGE(TAG_SD, "Failed to mount filesystem. "
                              "If you want the card to be formatted, set the CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.");
@@ -63,7 +63,7 @@ void task_sd(void *pvParameters)
         else
         {
             ESP_LOGE(TAG_SD, "Failed to initialize the card (%s). ",
-                     esp_err_to_name(ret));
+                     esp_err_to_name(errSD));
         }
         return;
     }
@@ -72,10 +72,10 @@ void task_sd(void *pvParameters)
     // Format mode
     if (counter.format == pdTRUE)
     {
-        ret = esp_vfs_fat_sdcard_format(mount_point, card);
-        if (ret != ESP_OK)
+        errSD = esp_vfs_fat_sdcard_format(mount_point, card);
+        if (errSD != ESP_OK)
         {
-            ESP_LOGE(TAG_SD, "Failed to format FATFS (%s)", esp_err_to_name(ret));
+            ESP_LOGE(TAG_SD, "Failed to format FATFS (%s)", esp_err_to_name(errSD));
         }
         else
             ESP_LOGI(TAG_SD, "Format Successful");
@@ -152,23 +152,23 @@ void task_littlefs(void *pvParameters)
         .dont_mount = false,
     };
 
-    esp_err_t ret = esp_vfs_littlefs_register(&conf);
+    esp_err_t errFS = esp_vfs_littlefs_register(&conf);
 
-    if (ret != ESP_OK)
+    if (errFS != ESP_OK)
     {
-        if (ret == ESP_FAIL)
+        if (errFS == ESP_FAIL)
             ESP_LOGE(TAG_LITTLEFS, "Failed to mount or format filesystem");
-        else if (ret == ESP_ERR_NOT_FOUND)
+        else if (errFS == ESP_ERR_NOT_FOUND)
             ESP_LOGE(TAG_LITTLEFS, "Failed to find LittleFS partition");
         else
-            ESP_LOGE(TAG_LITTLEFS, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
+            ESP_LOGE(TAG_LITTLEFS, "Failed to initialize LittleFS (%s)", esp_err_to_name(errFS));
     }
 
     size_t total = 0, used = 0;
-    ret = esp_littlefs_info(conf.partition_label, &total, &used);
-    if (ret != ESP_OK)
+    errFS = esp_littlefs_info(conf.partition_label, &total, &used);
+    if (errFS != ESP_OK)
     {
-        ESP_LOGE(TAG_LITTLEFS, "Failed to get LittleFS partition information (%s)", esp_err_to_name(ret));
+        ESP_LOGE(TAG_LITTLEFS, "Failed to get LittleFS partition information (%s)", esp_err_to_name(errFS));
     }
     else
     {
@@ -178,10 +178,10 @@ void task_littlefs(void *pvParameters)
     // Format mode
     if (counter.format == pdTRUE)
     {
-        ret = esp_littlefs_format(conf.partition_label);
-        if (ret != ESP_OK)
+        errFS = esp_littlefs_format(conf.partition_label);
+        if (errFS != ESP_OK)
         {
-            ESP_LOGE(TAG_LITTLEFS, "Failed to format LittleFS (%s)", esp_err_to_name(ret));
+            ESP_LOGE(TAG_LITTLEFS, "Failed to format LittleFS (%s)", esp_err_to_name(errFS));
         }
         else
             ESP_LOGI(TAG_LITTLEFS, "Format Successful");
