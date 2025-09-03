@@ -14,6 +14,7 @@
 #include "driver/uart.h"
 
 #define MAX_USED 0.8 // Maximum percentage of flash to be used by littlefs
+#define E220_BAUD_RATE 115200
 
 #endif
 
