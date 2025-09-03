@@ -2,6 +2,12 @@
 
 static const char *TAG_ACQ = "Acquire";
 
+static float lat_lon_conversion(float ddmm) {
+    int deg = (int)(ddmm / 100.0f);
+    float min = ddmm - (deg * 100.0f);
+    return deg + (min / 60.0f);
+}
+
 void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
 {
     // init device
