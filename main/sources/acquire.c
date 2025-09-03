@@ -33,10 +33,14 @@ void acquire_icm20948(data_t *data, icm20948_agmt_t *icm)
     data->rotation_x = icm->gyr.axes.x;
     data->rotation_y = icm->gyr.axes.y;
     data->rotation_z = icm->gyr.axes.z;
-    
+    data->magnet_x = icm->mag.axes.x;
+    data->magnet_y = icm->mag.axes.y;
+    data->magnet_z = icm->mag.axes.z;  
+
     xSemaphoreGive(xI2CMutex);
     vTaskDelay(0); // why?
 }
+
 //void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
 //{
 //    // init device
@@ -177,6 +181,8 @@ void task_acquire(void *pvParameters)
     xI2CMutex = xSemaphoreCreateMutex();
 
     data_t data = {0};
+
+    
 
     // init bmp390
     //bmp390_config_t dev_cfg = I2C_BMP390_CONFIG_DEFAULT;
