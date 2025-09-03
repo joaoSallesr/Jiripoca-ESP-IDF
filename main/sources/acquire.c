@@ -6,6 +6,12 @@
 static const char *TAG_ACQ = "Acquire";
 static const char *TAG_ICM = "ICM20948";
 
+static float lat_lon_conversion(float ddmm) {
+    int deg = (int)(ddmm / 100.0f);
+    float min = ddmm - (deg * 100.0f);
+    return deg + (min / 60.0f);
+}
+
 void init_icm20948(icm20948_device_t *icm)
 {
 
@@ -28,7 +34,7 @@ void init_icm20948(icm20948_device_t *icm)
 
     // setup ICM20948
     icm20948_init_i2c(icm, &icm_config);
-    
+
     // reset device state -> test later to see if it's really necessary
     icm20948_sw_reset(icm);
 	vTaskDelay(pdMS_TO_TICKS(250));
@@ -41,7 +47,7 @@ void init_icm20948(icm20948_device_t *icm)
 void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agmt)
 {
     xSemaphoreTake(xI2CMutex, portMAX_DELAY);
-    if (icm20948_get_agmt(icm, agmt) != ICM_20948_STAT_OK) 
+    if (icm20948_get_agmt(icm, agmt) != ICM_20948_STAT_OK)
         ESP_LOGE(TAG_ICM, "Failed to read ICM20948");
 
     data->accel_x = agmt->acc.axes.x;
@@ -52,7 +58,7 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
     data->rotation_z = agmt->gyr.axes.z;
     data->magnet_x = agmt->mag.axes.x;
     data->magnet_y = agmt->mag.axes.y;
-    data->magnet_z = agmt->mag.axes.z;  
+    data->magnet_z = agmt->mag.axes.z;
 
     xSemaphoreGive(xI2CMutex);
     vTaskDelay(0);
@@ -104,7 +110,7 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
 //{
 //    ESP_LOGI(APP_TAG, "######################## BMP390 - START #########################");
 //        //
-//        
+//
 //        // sensor readings
 //        if (bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure); != ESP_OK)
 //            ESP_LOGE(APP_TAG, "bmp390 device read failed (%s)", esp_err_to_name(result));
@@ -122,7 +128,7 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
 //        if (temp_altitude > data->max_altitude)
 //            data->max_altitude = temp_altitude;
 //        data->bmp_altitude = temp_altitude;
-//        
+//
 //        //
 //    ESP_LOGI(APP_TAG, "######################## BMP390 - END ###########################");
 //}
@@ -200,7 +206,7 @@ void task_acquire(void *pvParameters)
 
     data_t data = {0};
 
-    // ICM20948 
+    // ICM20948
     icm20948_device_t icm;
     icm20948_agmt_t agmt;
     init_icm20948(&icm);
@@ -229,7 +235,7 @@ void task_acquire(void *pvParameters)
         // BMP390
         //acquire_bmp390(&data, &dev_bmp);
 
-        
+
         status_checks(&data);
 
         // Print data
