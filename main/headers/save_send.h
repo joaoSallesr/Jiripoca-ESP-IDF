@@ -15,6 +15,11 @@
 
 #define MAX_USED 0.8 // Maximum percentage of flash to be used by littlefs
 #define E220_BAUD_RATE 115200
+#define SD_MOUNT "/sdcard"
+#define SD_TRANSF_SIZE 4000
+#define SD_MAX_FILES 5
+#define SD_UNIT_SIZE 16 * 1024
+
 
 #endif
 

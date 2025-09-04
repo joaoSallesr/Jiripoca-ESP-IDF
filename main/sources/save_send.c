@@ -8,38 +8,34 @@ static const char *TAG_LORA = "LoRa";
 // task_sd reads data from queue and writes it to SD card
 void task_sd(void *pvParameters)
 {
-    file_counter_t counter = *(file_counter_t *)pvParameters;
     esp_err_t errSD;
+    sdmmc_card_t *card;
+    file_counter_t counter = *(file_counter_t *)pvParameters;
 
     // Options for mounting the filesystem.
-    // If format_if_mount_failed is set to true, SD card will be partitioned and
-    // formatted in case when mounting fails.
+    // When format_if_mount_failed is set to true, SD card will be partitioned and
+    // formatted.
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-#ifdef CONFIG_SD_FORMAT_IF_MOUNT_FAILED
-        .format_if_mount_failed = true,
-#else
-        .format_if_mount_failed = false,
-#endif // EXAMPLE_FORMAT_IF_MOUNT_FAILED
-        .max_files = 5,
-        .allocation_unit_size = 16 * 1024};
-    sdmmc_card_t *card;
-    const char* mount_point = "/sdcard";
+        .format_if_mount_failed = CONFIG_SD_FORMAT_IF_MOUNT_FAILED, // Test changes
+        .max_files = SD_MAX_FILES,
+        .allocation_unit_size = SD_UNIT_SIZE,
+    };
     ESP_LOGI(TAG_SD, "Initializing SD card");
     // Use settings defined above to initialize SD card and mount FAT filesystem.
 
     ESP_LOGI(TAG_SD, "Using SPI peripheral");
-
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
 
-    spi_bus_config_t bus_cfg = {
+    spi_bus_config_t bus_config = {
         .mosi_io_num = SD_MOSI,
         .miso_io_num = SD_MISO,
         .sclk_io_num = SD_SCK,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = 4000,
+        .max_transfer_sz = SD_TRANSF_SIZE,
     };
-    errSD = spi_bus_initialize(host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
+
+    errSD = spi_bus_initialize(host.slot, &bus_config, SDSPI_DEFAULT_DMA);
     if (errSD != ESP_OK)
     {
         ESP_LOGE(TAG_SD, "Failed to initialize bus.");
@@ -50,9 +46,9 @@ void task_sd(void *pvParameters)
     slot_config.gpio_cs = SD_CS;
     slot_config.host_id = host.slot;
 
+    // Mount filesystem
     ESP_LOGI(TAG_SD, "Mounting filesystem");
-    errSD = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &card);
-
+    errSD = esp_vfs_fat_sdspi_mount(SD_MOUNT, &host, &slot_config, &mount_config, &card);
     if (errSD != ESP_OK)
     {
         if (errSD == ESP_FAIL)
@@ -72,14 +68,14 @@ void task_sd(void *pvParameters)
     // Format mode
     if (counter.format == pdTRUE)
     {
-        errSD = esp_vfs_fat_sdcard_format(mount_point, card);
+        errSD = esp_vfs_fat_sdcard_format(SD_MOUNT, card);
         if (errSD != ESP_OK)
         {
             ESP_LOGE(TAG_SD, "Failed to format FATFS (%s)", esp_err_to_name(errSD));
         }
         else
             ESP_LOGI(TAG_SD, "Format Successful");
-        esp_vfs_fat_sdcard_unmount(mount_point, card);
+        esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
         ESP_LOGI(TAG_SD, "Card unmounted");
         vTaskDelete(NULL);
     }
@@ -89,7 +85,7 @@ void task_sd(void *pvParameters)
 
     // Create log file
     char log_name[32];
-    snprintf(log_name, 32, "%s/flight%ld.bin", mount_point, counter.file_num);
+    snprintf(log_name, 32, "%s/flight%ld.bin", SD_MOUNT, counter.file_num);
     ESP_LOGI(TAG_SD, "Creating file %s", log_name);
     FILE *f = fopen(log_name, "w");
     if (f == NULL)
@@ -127,7 +123,7 @@ void task_sd(void *pvParameters)
         {
             xSemaphoreGive(xStatusMutex);
             ESP_LOGW(TAG_SD, "Landed, unmounting SD card");
-            esp_vfs_fat_sdcard_unmount(mount_point, card);
+            esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
             ESP_LOGI(TAG_SD, "Card unmounted");
             vTaskDelete(NULL); // Delete task
         }
