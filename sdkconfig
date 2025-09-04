@@ -637,12 +637,6 @@ CONFIG_I2CDEV_TIMEOUT=1000
 # end of I2C
 
 #
-# ICM-20948 Settings
-#
-# CONFIG_ICM_20948_USE_DMP is not set
-# end of ICM-20948 Settings
-
-#
 # Compiler options
 #
 CONFIG_COMPILER_OPTIMIZATION_DEBUG=y
