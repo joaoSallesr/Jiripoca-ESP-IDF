@@ -8,6 +8,41 @@ static float lat_lon_conversion(float ddmm) {
     return deg + (min / 60.0f);
 }
 
+static bool parse_gpgga_line(char *line, data_t *data) {
+    if (strncmp(line, "$GPGGA", 6) != 0){
+        return false;
+    }
+
+    char *fields[15] = {0}; 
+    size_t field_count = 0;
+    char *context = NULL;    
+
+    for (char *field = strtok_r(line, ",", &context);
+         field && field_count < 15;
+         field = strtok_r(NULL, ",", &context)) 
+    {
+        fields[field_count++] = field;
+    }
+
+    if (fields[2] && *fields[2] && fields[3]) {
+        float raw_lat = atof(fields[2]);
+        data->latitude = lat_lon_conversion(raw_lat);
+        if (fields[3][0] == 'S') data->latitude = -data->latitude;
+    }
+
+    if (fields[4] && *fields[4] && fields[5]) {
+        float raw_lon = atof(fields[4]);
+        data->longitude = lat_lon_conversion(raw_lon);
+        if (fields[5][0] == 'W') data->longitude = -data->longitude;
+    }
+
+    if (fields[9] && *fields[9]) {
+        data->gps_altitude = atof(fields[9]);
+    }
+
+    return true;
+}
+
 void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
 {
     // init device
