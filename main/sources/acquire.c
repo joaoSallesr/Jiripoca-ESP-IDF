@@ -7,14 +7,18 @@ static float lat_lon_conversion(float ddmm) {
     float min = ddmm - (deg * 100.0f);
     return deg + (min / 60.0f);
 }
+// since the GPGGA sentence gives us latitude/longitude in ddmm.mmmm values,
+// it was necessary to create a function that would transform this into decimal values
 
 static bool parse_gpgga_line(char *line, data_t *data) {
     if (strncmp(line, "$GPGGA", 6) != 0){
         return false;
     }
+    // this will check if the sentence received by the gps is $GPGGA
 
     char *fields[15] = {0}; 
-    size_t field_count = 0;
+    size_t field_count = 0; // auxiliary variable used by strtok_r.
+    // necessary because strtok_r needs context to remember where it left off.
     char *context = NULL;    
 
     for (char *field = strtok_r(line, ",", &context);
@@ -23,19 +27,23 @@ static bool parse_gpgga_line(char *line, data_t *data) {
     {
         fields[field_count++] = field;
     }
+    // strtok_r is from the string library, it will break the string into diferent tokens/"fields"
+    // each field is a GPS information
 
+    // latitude (field 2 + field 3)
     if (fields[2] && *fields[2] && fields[3]) {
         float raw_lat = atof(fields[2]);
         data->latitude = lat_lon_conversion(raw_lat);
         if (fields[3][0] == 'S') data->latitude = -data->latitude;
+        // the coordinates are negative at south and west
     }
-
+    // longitude (field 4 + field 5)
     if (fields[4] && *fields[4] && fields[5]) {
         float raw_lon = atof(fields[4]);
         data->longitude = lat_lon_conversion(raw_lon);
         if (fields[5][0] == 'W') data->longitude = -data->longitude;
     }
-
+    // altitude (field 9)
     if (fields[9] && *fields[9]) {
         data->gps_altitude = atof(fields[9]);
     }
