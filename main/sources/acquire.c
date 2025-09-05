@@ -5,22 +5,48 @@
 
 static const char *TAG_ACQ = "Acquire";
 static const char *TAG_ICM = "ICM20948";
-void init_icm20948()
+void init_icm20948(icm20948_device_t icm)
 {
-    //standard ic2 bus config from component example -> revise later
+
+    // standard ic2 bus config from component example -> revise later
     i2c_config_t bus_config = { .mode = I2C_MODE_MASTER,
 	                            .sda_io_num = (gpio_num_t) I2C_SDA,
 	                            .sda_pullup_en = GPIO_PULLUP_ENABLE,
 	                            .scl_io_num = (gpio_num_t) I2C_SCL,
 	                            .scl_pullup_en = GPIO_PULLUP_ENABLE,
-	                            .master.clk_speed = 400000,
-	                            .clk_flags = I2C_SCLK_SRC_FLAG_FOR_NOMAL
-    };
-
-    //standard ICM20948 config from component example -> revise later
+	                            .master.clk_speed = I2C_MASTER_FREQ_HZ,
+	                            .clk_flags = 0 };
+    
+    // standard ICM20948 config from component example -> revise later
     icm0948_config_i2c_t icm_config = { .i2c_port = I2C_MASTER_NUM,
-	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD1
-    };
+	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD1 }; 
+
+    // setup i2c
+	ESP_ERROR_CHECK(i2c_param_config(icm_config.i2c_port, &bus_config));
+	ESP_ERROR_CHECK(i2c_driver_install(icm_config.i2c_port, bus_config.mode, 0, 0, 0));
+
+    //setup ICM20948
+    icm20948_init_i2c(&icm, &icm_config);
+}
+
+void acquire_icm20948(data_t *data, icm20948_device_t icm, icm20948_agmt_t agmt) // revise later
+{
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    if (icm20948_get_agmt(&icm, &agmt) != ICM_20948_STAT_OK)
+        ESP_LOGE(TAG_ICM, "Failed to read ICM20948");
+
+    data->accel_x = agmt.acc.axes.x;
+    data->accel_y = agmt.acc.axes.y;
+    data->accel_z = agmt.acc.axes.z;
+    data->rotation_x = agmt.gyr.axes.x;
+    data->rotation_y = agmt.gyr.axes.y;
+    data->rotation_z = agmt.gyr.axes.z;
+    data->magnet_x = agmt.mag.axes.x;
+    data->magnet_y = agmt.mag.axes.y;
+    data->magnet_z = agmt.mag.axes.z;
+
+    xSemaphoreGive(xI2CMutex);
+    vTaskDelay(0); // why?
 }
 
 void adc_init(adc_oneshot_unit_handle_t *adc_unit_handle, adc_cali_handle_t *adc_cali_handle) {
@@ -358,6 +384,7 @@ void task_acquire(void *pvParameters)
     //bmp390_handle_t dev_hdl;
     //init_bmp390(&dev_cfg, &dev_hdl);
 
+    // GPS
     xTaskCreate(task_gps, "GPS", configMINIMAL_STACK_SIZE * 4, &data, 6, NULL);
 
     adc_oneshot_unit_handle_t adc_unit_handle;
