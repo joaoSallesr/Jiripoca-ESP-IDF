@@ -1,6 +1,5 @@
-idf_component_register(SRCS "main\sources\main.c"
-                            "main\sources\acquire.c"
-                            "main\sources\save_send.c"
-                            "main\sources\common.c"
-                            "components\icm20948\src\icm20948.c"
-                    INCLUDE_DIRS ".")
+idf_component_register(SRCS "sources/main.c"
+                            "sources/acquire.c"
+                            "sources/save_send.c"
+                            "sources/common.c"
+                    INCLUDE_DIRS "headers")

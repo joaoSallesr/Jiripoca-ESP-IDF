@@ -87,23 +87,6 @@ void task_deploy(void *pvParameters)
 // task_buzzer_led blinks LED and beeps buzzer to indicate status
 void task_buzzer_led(void *pvParameters)
 {
-    gpio_reset_pin(BUZZER_GPIO);
-    gpio_set_direction(BUZZER_GPIO, GPIO_MODE_OUTPUT);
-
-    gpio_reset_pin(LED_GPIO);
-    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
-
-    // When initializing, blink LED and beep buzzer 10 times
-    for (uint32_t i = 0; i < 10; ++i)
-    {
-        gpio_set_level(LED_GPIO, HIGH);
-        gpio_set_level(BUZZER_GPIO, HIGH);
-        vTaskDelay(pdMS_TO_TICKS(50));
-        gpio_set_level(LED_GPIO, LOW);
-        gpio_set_level(BUZZER_GPIO, HIGH);
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
-    ESP_LOGI("Buzzer LED", "Initialized");
 
     while (true)
     {
@@ -143,12 +126,29 @@ void task_buzzer_led(void *pvParameters)
 void app_main(void)
 {
     // GPIO Initialization
-
     gpio_set_direction(RBF_GPIO, GPIO_MODE_INPUT);
     gpio_set_pull_mode(RBF_GPIO, GPIO_PULLUP_ONLY);
 
     gpio_set_direction(BUTTON_GPIO, GPIO_MODE_INPUT);
     gpio_set_pull_mode(BUTTON_GPIO, GPIO_PULLUP_ONLY);
+
+    gpio_reset_pin(BUZZER_GPIO);
+    gpio_set_direction(BUZZER_GPIO, GPIO_MODE_OUTPUT);
+    gpio_reset_pin(LED_GPIO);
+    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
+
+    // When initializing, blink LED and beep buzzer 10 times
+    for (uint32_t i = 0; i < 10; ++i)
+    {
+        gpio_set_level(LED_GPIO, HIGH);
+        gpio_set_level(BUZZER_GPIO, HIGH);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        gpio_set_level(LED_GPIO, LOW);
+        gpio_set_level(BUZZER_GPIO, HIGH);
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    ESP_LOGI("Buzzer LED", "Initialized");
+    // --- FIM DA MUDANÇA ---
 
     // Enter format mode if button is pressed for 5 seconds
     uint32_t format = pdFALSE;
