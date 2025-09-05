@@ -87,7 +87,6 @@ void task_deploy(void *pvParameters)
 // task_buzzer_led blinks LED and beeps buzzer to indicate status
 void task_buzzer_led(void *pvParameters)
 {
-
     while (true)
     {
         // Use local copy of STATUS because of delays
@@ -98,8 +97,18 @@ void task_buzzer_led(void *pvParameters)
         // If ARMED, blink LED and beep buzzer three times
         if (status_local & ARMED)
         {
-            static uint32_t i = 0;
-            while (i++ < 3)
+            // static uint32_t i = 0;
+            // while (i++ < 3)
+            // {
+            //     gpio_set_level(LED_GPIO, HIGH);
+            //     gpio_set_level(BUZZER_GPIO, HIGH);
+            //     vTaskDelay(pdMS_TO_TICKS(1000));
+            //     gpio_set_level(LED_GPIO, LOW);
+            //     gpio_set_level(BUZZER_GPIO, LOW);
+            //     vTaskDelay(pdMS_TO_TICKS(100));
+            // }
+            
+            for (uint32_t i = 0; i < 3; i++)
             {
                 gpio_set_level(LED_GPIO, HIGH);
                 gpio_set_level(BUZZER_GPIO, HIGH);
@@ -148,7 +157,6 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(50));
     }
     ESP_LOGI("Buzzer LED", "Initialized");
-    // --- FIM DA MUDANÇA ---
 
     // Enter format mode if button is pressed for 5 seconds
     uint32_t format = pdFALSE;
