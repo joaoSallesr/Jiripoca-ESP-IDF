@@ -128,7 +128,7 @@ void task_buzzer_led(void *pvParameters)
             gpio_set_level(BUZZER_GPIO, LOW);
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
