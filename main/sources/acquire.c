@@ -55,9 +55,54 @@ static bool parse_gpgga_line(char *line, data_t *data) {
     return true;
 }
 
-// void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
-// {
-//     // init device
+void task_gps(void *pvParameters){
+    uart_port_t uart_num = UART_NUM_1;
+    const int uart_buffer_size = 2048;
+    QueueHandle_t uart_queue;
+    uart_config_t gps_uart_config = {
+        .baud_rate = GPS_BAUD_RATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity    = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
+    };
+
+    uart_param_config(uart_num, &gps_uart_config);
+
+    uart_set_pin(uart_num, GPS_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+
+    uart_driver_install(uart_num, uart_buffer_size, uart_buffer_size, 20, &uart_queue, 0);
+
+    data_t data = {0};
+    char *line = (char *) malloc(128);
+    size_t line_len = 0;
+
+    while (true) {
+        // it starts readding the data from the gps
+        // until it finds a newline character, which indicates the end of a sentence
+        int len = uart_read_bytes(uart_num, (uint8_t *)line + line_len, 128 - line_len - 1, pdMS_TO_TICKS(1000));
+        if (len > 0) {
+            line_len += len;
+            line[line_len] = '\0'; // null terminate the string
+
+            // look for newline characters to identify complete lines
+            char *start = line;
+            char *newline;
+            while ((newline = strchr(start, '\n')) != NULL) {
+                *newline = '\0'; // replace newline with null terminator
+                if (parse_gpgga_line(start, &data)) {
+                    ESP_LOGI(TAG_ACQ, "GPS Data: Lat: %.5f, Lon: %.5f, Alt: %.2f",
+                             data.latitude, data.longitude, data.gps_altitude);
+                }
+            }
+            line_len = strlen(line);
+            memmove(line, line + (line_len - 1), line_len);
+        }
+    }
+
+    free(line);
+    uart_driver_delete(uart_num);
+}
 //     bmp390_init(i2c0_bus_hdl, &dev_cfg, &dev_hdl);
 //     if (dev_hdl == NULL) {
 //         ESP_LOGE(APP_TAG, "bmp390 handle init failed");
