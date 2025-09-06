@@ -120,7 +120,7 @@ void task_buzzer_led(void *pvParameters)
     }
 }
 
-void app_main(void)
+static void setup_peripherals(void)
 {
     // GPIO Initialization
     gpio_set_direction(RBF_GPIO, GPIO_MODE_INPUT);
@@ -145,9 +145,10 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(50));
     }
     ESP_LOGI("Buzzer LED", "Initialized");
+}
 
-    // Enter format mode if button is pressed for 5 seconds
-    uint32_t format = pdFALSE;
+static bool check_for_format_mode(void)
+{
     if (gpio_get_level(BUTTON_GPIO) == LOW)
     {
         uint64_t time = esp_timer_get_time();
@@ -156,20 +157,26 @@ void app_main(void)
             if (esp_timer_get_time() - time > 5000000)
             {
                 ESP_LOGW("RESET", "Button pressed for 5 seconds. Formatting...");
-                format = pdTRUE;
-                break;
+                return true;
             }
             vTaskDelay(10);
         }
     }
+    return false;
+}
 
+static void setup_rtos_objects(void)
+{
     // Create Mutexes
     xStatusMutex = xSemaphoreCreateMutex();
 
     // Create Queues
     xAltQueue = xQueueCreate(2, sizeof(float));
     xLittleFSQueue = xQueueCreate(2, sizeof(data_t));
+}
 
+static void manage_nvs_counters(bool format_mode, file_counter_t *sd_counter, file_counter_t *lfs_counter)
+{
     // Initialize NVS to store file counters
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -191,16 +198,12 @@ void app_main(void)
     nvs_get_i32(nvs_handle, "lfs_counter", &lfs_num);
 
     // Increment file counters
-    if (sd_num < CONFIG_MAX_SD_FILES)
-        sd_num++;
-    else
-        sd_num = 0;
-    if (lfs_num < CONFIG_MAX_LFS_FILES)
-        lfs_num++;
-    else
-        lfs_num = 0;
+    if (sd_num < CONFIG_MAX_SD_FILES) sd_num++;
+    else sd_num = 0;
+    if (lfs_num < CONFIG_MAX_LFS_FILES) lfs_num++;
+    else lfs_num = 0;
 
-    if (format == pdTRUE)
+    if (format_mode)
     {
         sd_num = 0;
         lfs_num = 0;
@@ -210,26 +213,32 @@ void app_main(void)
     nvs_set_i32(nvs_handle, "sd_counter", sd_num);
     nvs_set_i32(nvs_handle, "lfs_counter", lfs_num);
     nvs_commit(nvs_handle);
-
-    // Close NVS
     nvs_close(nvs_handle);
 
-    // Create file counter structs for tasks
-    file_counter_t counter_sd = {
-        .file_num = sd_num,
-        .format = format
-    };
-    file_counter_t counter_lfs = {
-        .file_num = lfs_num,
-        .format = format
-    };
+    // Populate the counter structs to be used by tasks
+    sd_counter->file_num = sd_num;
+    sd_counter->format = format_mode;
+    lfs_counter->file_num = lfs_num;
+    lfs_counter->format = format_mode;
+}
+
+
+void app_main(void)
+{
+    setup_peripherals();
+    
+    bool format_mode = check_for_format_mode();
+
+    setup_rtos_objects();
+
+    file_counter_t counter_sd, counter_lfs;
+    manage_nvs_counters(format_mode, &counter_sd, &counter_lfs);
 
     // If format is true, format SD and LittleFS, then restart
-    if (format == pdTRUE)
+    if (format_mode)
     {
         xTaskCreate(task_sd, "SD", configMINIMAL_STACK_SIZE * 8, &counter_sd, 5, NULL);
         xTaskCreate(task_littlefs, "LittleFS", configMINIMAL_STACK_SIZE * 8, &counter_lfs, 5, NULL);
-
         vTaskDelay(pdMS_TO_TICKS(30000));
         esp_restart();
     }
