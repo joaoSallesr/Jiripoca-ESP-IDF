@@ -13,6 +13,10 @@
 #include "freertos/queue.h"
 #include "sdkconfig.h"
 
+#include "driver/uart.h"
+#include "driver/gpio.h"
+#include "driver/i2c.h"
+
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_mac.h" //revisar
