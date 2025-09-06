@@ -56,6 +56,9 @@ static bool parse_gpgga_line(char *line, data_t *data) {
 }
 
 void task_gps(void *pvParameters){
+
+    data_t *gps_data = (data_t *)pvParameters;
+
     uart_port_t uart_num = UART_NUM_1;
     const int uart_buffer_size = 2048;
     QueueHandle_t uart_queue;
@@ -73,14 +76,14 @@ void task_gps(void *pvParameters){
 
     uart_driver_install(uart_num, uart_buffer_size, uart_buffer_size, 20, &uart_queue, 0);
 
-    data_t data = {0};
-    char *line = (char *) malloc(128);
+    char line[128];
     size_t line_len = 0;
+    uint8_t uart_rx[64];
 
     while (true) {
         // it starts readding the data from the gps
         // until it finds a newline character, which indicates the end of a sentence
-        int len = uart_read_bytes(uart_num, (uint8_t *)line + line_len, 128 - line_len - 1, pdMS_TO_TICKS(1000));
+        int len = uart_read_bytes(uart_num, uart_rx, sizeof(uart_rx), pdMS_TO_TICKS(1000));
         if (len > 0) {
             line_len += len;
             line[line_len] = '\0'; // null terminate the string
@@ -90,14 +93,20 @@ void task_gps(void *pvParameters){
             char *newline;
             while ((newline = strchr(start, '\n')) != NULL) {
                 *newline = '\0'; // replace newline with null terminator
-                if (parse_gpgga_line(start, &data)) {
+                if (parse_gpgga_line(start, gps_data)) {
                     ESP_LOGI(TAG_ACQ, "GPS Data: Lat: %.5f, Lon: %.5f, Alt: %.2f",
-                             data.latitude, data.longitude, data.gps_altitude);
+                             gps_data->latitude, gps_data->longitude, gps_data->gps_altitude);
                 }
             }
-            line_len = strlen(line);
-            memmove(line, line + (line_len - 1), line_len);
+        size_t remaining = line_len - (start - line);
+        // calculate how many bytes remain after the last processed '\n'
+        memmove(line, start, remaining);
+        // shift the remaining bytes to the beginning of the buffer
+        // this ensures that incomplete data is kept for the next UART read
+        line_len = remaining;
+        // update the line length to match the number of leftover bytes
         }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     free(line);
