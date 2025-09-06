@@ -13,7 +13,6 @@ void task_deploy(void *pvParameters)
 {
 
     gpio_set_direction(DROGUE_GPIO, GPIO_MODE_OUTPUT);
-
     gpio_set_direction(MAIN_GPIO, GPIO_MODE_OUTPUT);
 
     float current_altitude = 0;
@@ -25,17 +24,8 @@ void task_deploy(void *pvParameters)
 
     while (true)
     {
-        /*// Manual Deploy Test
-        if (gpio_get_level(BUTTON_GPIO) == LOW)
-        {
-            gpio_set_level(MAIN_GPIO, HIGH);
-            gpio_set_level(DROGUE_GPIO, HIGH);
-        }
-        else
-        {
-            gpio_set_level(MAIN_GPIO, LOW);
-            gpio_set_level(DROGUE_GPIO, LOW);
-        }*/
+        bool acionar_drogue = false;
+        bool acionar_main = false;
 
         // Get current altitude
         xQueueReceive(xAltQueue, &current_altitude, portMAX_DELAY);
@@ -47,40 +37,38 @@ void task_deploy(void *pvParameters)
         }
 
         xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-        if (!(STATUS & DROGUE_DEPLOYED)) // If drogue not deployed
-        {
-            if (current_altitude < max_altitude - CONFIG_DROGUE_THRESHOLD) // If altitude is DROGUE_THRESHOLD below max altitude
-            {
-                STATUS |= DROGUE_DEPLOYED;
-                xSemaphoreGive(xStatusMutex);
-                gpio_set_level(DROGUE_GPIO, HIGH);
-                ESP_LOGW(TAG_DEPLOY, "Drogue deployed");
-                vTaskDelay(pdMS_TO_TICKS(500));
-                gpio_set_level(DROGUE_GPIO, LOW);
-            }
-            else
-                xSemaphoreGive(xStatusMutex);
-        }
-        else if (!(STATUS & MAIN_DEPLOYED)) // If drogue deployed but main not deployed
-        {
-            if (current_altitude < start_altitude + CONFIG_MAIN_ALTITUDE) // If altitude is MAIN_ALTITUDE above start altitude
-            {
-                STATUS |= MAIN_DEPLOYED;
-                xSemaphoreGive(xStatusMutex);
 
-                gpio_set_level(MAIN_GPIO, HIGH);
-                ESP_LOGW(TAG_DEPLOY, "Main deployed");
-                vTaskDelay(pdMS_TO_TICKS(500));
-                gpio_set_level(MAIN_GPIO, LOW);
-
-                // Delete task
-                vTaskDelete(NULL);
-            }
-            else
-                xSemaphoreGive(xStatusMutex);
+        if (!(STATUS & DROGUE_DEPLOYED) && (current_altitude < max_altitude - CONFIG_DROGUE_THRESHOLD))
+        {
+            STATUS |= DROGUE_DEPLOYED;
+            acionar_drogue = true;
         }
-        else
-            xSemaphoreGive(xStatusMutex);
+        else if (!(STATUS & MAIN_DEPLOYED) && (current_altitude < start_altitude + CONFIG_MAIN_ALTITUDE))
+        {
+            STATUS |= MAIN_DEPLOYED;
+            acionar_main = true;
+        }
+
+        xSemaphoreGive(xStatusMutex);
+
+        if (acionar_drogue)
+        {
+            gpio_set_level(DROGUE_GPIO, HIGH);
+            ESP_LOGW(TAG_DEPLOY, "Drogue deployed");
+            vTaskDelay(pdMS_TO_TICKS(500));
+            gpio_set_level(DROGUE_GPIO, LOW);
+        }
+
+        if (acionar_main)
+        {
+            gpio_set_level(MAIN_GPIO, HIGH);
+            ESP_LOGW(TAG_DEPLOY, "Main deployed");
+            vTaskDelay(pdMS_TO_TICKS(500));
+            gpio_set_level(MAIN_GPIO, LOW);
+
+            // Delete task
+            vTaskDelete(NULL);
+        }
     }
 }
 
