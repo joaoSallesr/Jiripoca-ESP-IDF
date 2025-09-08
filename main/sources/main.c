@@ -58,7 +58,7 @@ void task_deploy(void *pvParameters)
             vTaskDelay(pdMS_TO_TICKS(500));
             gpio_set_level(DROGUE_GPIO, LOW);
         }
-
+// levar esses ifs pra dentro dos deployeds
         if (acionar_main)
         {
             gpio_set_level(MAIN_GPIO, HIGH);
@@ -85,16 +85,6 @@ void task_buzzer_led(void *pvParameters)
         // If ARMED, blink LED and beep buzzer three times
         if (status_local & ARMED)
         {
-            // static uint32_t i = 0;
-            // while (i++ < 3)
-            // {
-            //     gpio_set_level(LED_GPIO, HIGH);
-            //     gpio_set_level(BUZZER_GPIO, HIGH);
-            //     vTaskDelay(pdMS_TO_TICKS(1000));
-            //     gpio_set_level(LED_GPIO, LOW);
-            //     gpio_set_level(BUZZER_GPIO, LOW);
-            //     vTaskDelay(pdMS_TO_TICKS(100));
-            // }
             
             for (uint32_t i = 0; i < 3; i++)
             {
@@ -104,7 +94,7 @@ void task_buzzer_led(void *pvParameters)
                 gpio_set_level(LED_GPIO, LOW);
                 gpio_set_level(BUZZER_GPIO, LOW);
                 vTaskDelay(pdMS_TO_TICKS(100));
-            }
+            } //criar a task apenas pra apitar quando tiver no chão
         }
         // If LANDED, blink LED every second
         if (status_local & LANDED)
@@ -165,16 +155,6 @@ static bool check_for_format_mode(void)
     return false;
 }
 
-static void setup_rtos_objects(void)
-{
-    // Create Mutexes
-    xStatusMutex = xSemaphoreCreateMutex();
-
-    // Create Queues
-    xAltQueue = xQueueCreate(2, sizeof(float));
-    xLittleFSQueue = xQueueCreate(2, sizeof(data_t));
-}
-
 static void manage_nvs_counters(bool format_mode, file_counter_t *sd_counter, file_counter_t *lfs_counter)
 {
     // Initialize NVS to store file counters
@@ -229,7 +209,11 @@ void app_main(void)
     
     bool format_mode = check_for_format_mode();
 
-    setup_rtos_objects();
+    // Create Mutexes
+    xStatusMutex = xSemaphoreCreateMutex();
+    // Create Queues
+    xAltQueue = xQueueCreate(2, sizeof(float));
+    xLittleFSQueue = xQueueCreate(2, sizeof(data_t));
 
     file_counter_t counter_sd, counter_lfs;
     manage_nvs_counters(format_mode, &counter_sd, &counter_lfs);
