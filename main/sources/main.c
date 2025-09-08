@@ -77,36 +77,26 @@ void task_buzzer_led(void *pvParameters)
 {
     while (true)
     {
+        vTaskDelay(pdMS_TO_TICKS(1000)); 
+                                         
         // Use local copy of STATUS because of delays
         xSemaphoreTake(xStatusMutex, portMAX_DELAY);
         int32_t status_local = STATUS;
         xSemaphoreGive(xStatusMutex);
 
-        // If ARMED, blink LED and beep buzzer three times
-        if (status_local & ARMED)
+        // If LANDED, blink LED every second
+        if (status_local & LANDED)
         {
-            
-            for (uint32_t i = 0; i < 3; i++)
+            while(true)
             {
                 gpio_set_level(LED_GPIO, HIGH);
                 gpio_set_level(BUZZER_GPIO, HIGH);
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 gpio_set_level(LED_GPIO, LOW);
                 gpio_set_level(BUZZER_GPIO, LOW);
-                vTaskDelay(pdMS_TO_TICKS(100));
-            } //criar a task apenas pra apitar quando tiver no chão
+                vTaskDelay(pdMS_TO_TICKS(1000));
+            }
         }
-        // If LANDED, blink LED every second
-        if (status_local & LANDED)
-        {
-            gpio_set_level(LED_GPIO, HIGH);
-            gpio_set_level(BUZZER_GPIO, HIGH);
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            gpio_set_level(LED_GPIO, LOW);
-            gpio_set_level(BUZZER_GPIO, LOW);
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
@@ -243,6 +233,8 @@ void app_main(void)
 
     while (true)
     {
+        bool just_armed = false;
+
         // Logic for arming parachute deployment
         xSemaphoreTake(xStatusMutex, portMAX_DELAY);
         if (!(STATUS & ARMED)) // If not armed
@@ -251,10 +243,25 @@ void app_main(void)
             {
                 xTaskCreate(task_deploy, "Deploy", configMINIMAL_STACK_SIZE * 2, NULL, 5, NULL); // Start deploy task
                 STATUS |= ARMED;                                                                 // Set ARMED
+                just_armed = true; 
             }
         }
         xSemaphoreGive(xStatusMutex);
 
+        if (just_armed)
+        {
+            ESP_LOGW("MAIN", "System ARMED. Signaling...");
+            for (uint32_t i = 0; i < 3; i++)
+            {
+                gpio_set_level(LED_GPIO, HIGH);
+                gpio_set_level(BUZZER_GPIO, HIGH);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                gpio_set_level(LED_GPIO, LOW);
+                gpio_set_level(BUZZER_GPIO, LOW);
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+        }
+        
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
