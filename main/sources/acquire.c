@@ -5,10 +5,11 @@
 
 static const char *TAG_ACQ = "Acquire";
 static const char *TAG_ICM = "ICM20948";
+
 void init_icm20948(icm20948_device_t icm)
 {
 
-    // standard ic2 bus config from component example -> revise later
+    // standard ic2 bus config from component example
     i2c_config_t bus_config = { .mode = I2C_MODE_MASTER,
 	                            .sda_io_num = (gpio_num_t) I2C_SDA,
 	                            .sda_pullup_en = GPIO_PULLUP_ENABLE,
@@ -16,20 +17,19 @@ void init_icm20948(icm20948_device_t icm)
 	                            .scl_pullup_en = GPIO_PULLUP_ENABLE,
 	                            .master.clk_speed = I2C_MASTER_FREQ_HZ,
 	                            .clk_flags = 0 };
-    
-    // standard ICM20948 config from component example -> revise later
-    icm0948_config_i2c_t icm_config = { .i2c_port = I2C_MASTER_NUM,
-	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD1 }; 
 
+    // standard ICM20948 config from component example
+    icm0948_config_i2c_t icm_config = { .i2c_port = I2C_MASTER_NUM,
+	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD1 };
     // setup i2c
 	ESP_ERROR_CHECK(i2c_param_config(icm_config.i2c_port, &bus_config));
 	ESP_ERROR_CHECK(i2c_driver_install(icm_config.i2c_port, bus_config.mode, 0, 0, 0));
 
-    //setup ICM20948
+    // setup ICM20948
     icm20948_init_i2c(&icm, &icm_config);
 }
 
-void acquire_icm20948(data_t *data, icm20948_device_t icm, icm20948_agmt_t agmt) // revise later
+void acquire_icm20948(data_t *data, icm20948_device_t icm, icm20948_agmt_t agmt) // revisar uso de ponteiro?
 {
     xSemaphoreTake(xI2CMutex, portMAX_DELAY);
     if (icm20948_get_agmt(&icm, &agmt) != ICM_20948_STAT_OK)
@@ -46,7 +46,7 @@ void acquire_icm20948(data_t *data, icm20948_device_t icm, icm20948_agmt_t agmt)
     data->magnet_z = agmt.mag.axes.z;
 
     xSemaphoreGive(xI2CMutex);
-    vTaskDelay(0); // why?
+    vTaskDelay(0);
 }
 
 void adc_init(adc_oneshot_unit_handle_t *adc_unit_handle, adc_cali_handle_t *adc_cali_handle) {
