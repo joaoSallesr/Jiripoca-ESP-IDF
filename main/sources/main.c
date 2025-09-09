@@ -30,6 +30,17 @@ void task_deploy(void *pvParameters)
         // Get current altitude
         xQueueReceive(xAltQueue, &current_altitude, portMAX_DELAY);
 
+        // Check the disarm and see if it should continue
+        xSemaphoreTake(xStatusMutex, portMAX_DELAY);
+        if (!(STATUS & ARMED))
+        {
+            // Terminates the task if the system is not armed
+            xSemaphoreGive(xStatusMutex);
+            ESP_LOGE(TAG_DEPLOY, "Disarm command received. Terminating deploy task.");
+            vTaskDelete(NULL);
+        }
+        xSemaphoreGive(xStatusMutex);
+        
         // Update max altitude
         if (current_altitude > max_altitude)
         {
@@ -58,7 +69,7 @@ void task_deploy(void *pvParameters)
             vTaskDelay(pdMS_TO_TICKS(500));
             gpio_set_level(DROGUE_GPIO, LOW);
         }
-// levar esses ifs pra dentro dos deployeds
+
         if (acionar_main)
         {
             gpio_set_level(MAIN_GPIO, HIGH);
@@ -234,6 +245,7 @@ void app_main(void)
     while (true)
     {
         bool just_armed = false;
+        bool just_disarmed = false;
 
         // Logic for arming parachute deployment
         xSemaphoreTake(xStatusMutex, portMAX_DELAY);
@@ -243,7 +255,17 @@ void app_main(void)
             {
                 xTaskCreate(task_deploy, "Deploy", configMINIMAL_STACK_SIZE * 2, NULL, 5, NULL); // Start deploy task
                 STATUS |= ARMED;                                                                 // Set ARMED
-                just_armed = true; 
+                just_armed = true;
+            }
+        }
+
+        else // If already armed, check disarm condition
+        {
+            
+            if (!(STATUS & FLYING) && (gpio_get_level(RBF_GPIO) == HIGH))
+            {
+                STATUS &= (~ARMED);
+                just_disarmed = true;
             }
         }
         xSemaphoreGive(xStatusMutex);
@@ -260,6 +282,16 @@ void app_main(void)
                 gpio_set_level(BUZZER_GPIO, LOW);
                 vTaskDelay(pdMS_TO_TICKS(100));
             }
+        }
+        
+        if (just_disarmed)
+        {
+            ESP_LOGE("MAIN", "System DISARMED. Signaling...");
+            gpio_set_level(LED_GPIO, HIGH);
+            gpio_set_level(BUZZER_GPIO, HIGH);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            gpio_set_level(LED_GPIO, LOW);
+            gpio_set_level(BUZZER_GPIO, LOW);
         }
         
         vTaskDelay(pdMS_TO_TICKS(100));
