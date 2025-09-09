@@ -6,6 +6,43 @@
 static const char *TAG_ACQ = "Acquire";
 static const char *TAG_ICM = "ICM20948";
 
+void adc_init(adc_oneshot_unit_handle_t *adc_unit_handle, adc_cali_handle_t *adc_cali_handle) {
+    adc_oneshot_unit_init_cfg_t unit_config = {
+        .unit_id = ADC_UNIT_1,
+        .ulp_mode = ADC_ULP_MODE_DISABLE
+    };
+    adc_oneshot_new_unit(&unit_config, adc_unit_handle);
+
+    // Configure the ADC channel
+    adc_oneshot_chan_cfg_t channel_config = {
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT
+    };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(*adc_unit_handle, ADC_CHANNEL_4, &channel_config));
+
+    // Configure calibration (raw ADC value in mV)
+    adc_cali_curve_fitting_config_t cali_config = {
+        .unit_id = ADC_UNIT_1,
+        .chan = ADC_CHANNEL_4,
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT
+    };
+    ESP_ERROR_CHECK(adc_cali_create_scheme_curve_fitting(&cali_config, adc_cali_handle));
+}
+
+float read_battery_voltage(adc_oneshot_unit_handle_t adc_unit_handle, adc_cali_handle_t adc_cali_handle) {
+    int raw;
+    ESP_ERROR_CHECK(adc_oneshot_read(adc_unit_handle, ADC_CHANNEL_4, &raw));
+
+    int voltage_mv;
+    ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc_cali_handle, raw, &voltage_mv));
+
+    // Calculate actual battery voltage based on voltage divider ratio
+    float battery_voltage = (voltage_mv / 1000.0f) * ((R1 + R2) / R2); // Convert mV to V and apply divider ratio
+    // (R1 + R2) / R2 = 1.5 for R1=10k and R2=20k
+    return battery_voltage;
+}
+
 static float lat_lon_conversion(float ddmm) {
     int deg = (int)(ddmm / 100.0f);
     float min = ddmm - (deg * 100.0f);
@@ -301,6 +338,11 @@ void task_acquire(void *pvParameters)
     //bmp390_handle_t dev_hdl;
     //init_bmp390(&dev_cfg, &dev_hdl);
 
+    xTaskCreate(task_gps, "GPS", configMINIMAL_STACK_SIZE * 4, &data, 6, NULL);
+
+    adc_oneshot_unit_handle_t adc_unit_handle;
+    adc_cali_handle_t adc_cali_handle;
+    adc_init(&adc_unit_handle, &adc_cali_handle);
 
     vTaskDelay(pdMS_TO_TICKS(1000));
     while (true)
@@ -311,13 +353,14 @@ void task_acquire(void *pvParameters)
         data.status = STATUS;
         xSemaphoreGive(xStatusMutex);
 
+        // ADC
+        data.voltage = read_battery_voltage(adc_unit_handle, adc_cali_handle);
+
         // ICM20948
         acquire_icm20948(&data, &icm, &agmt);
 
-
         // BMP390
         //acquire_bmp390(&data, &dev_bmp);
-
 
         status_checks(&data);
 

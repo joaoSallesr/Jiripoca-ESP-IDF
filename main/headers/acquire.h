@@ -8,7 +8,10 @@
 
 #define G 9.80665
 
-#define GPS_BAUD_RATE 9600
+#define R1 10000.0f // Resistor connected to battery positive terminal
+#define R2 20000.0f  // Resistor connected to ground
+
+#define GPS_BAUD_RATE 115200
 
 #define FLYING_THRESHOLD 10 * G // Acceleration threshold to consider rocket flying
 #define CUTOFF_THRESHOLD 3 * G // Acceleration threshold to consider motor cutoff
