@@ -130,9 +130,10 @@ void task_gps(void *pvParameters){
             char *newline;
             while ((newline = strchr(start, '\n')) != NULL) {
                 *newline = '\0'; // replace newline with null terminator
-                if (parse_gpgga_line(start, gps_data)) {
-                    ESP_LOGI(TAG_ACQ, "GPS Data: Lat: %.5f, Lon: %.5f, Alt: %.2f",
-                             gps_data->latitude, gps_data->longitude, gps_data->gps_altitude);
+                if (parse_gpgga_line(start, gps_data)){
+                    // if the line is a valid GPGGA sentence, update gps_data
+                    //ESP_LOGI(TAG_ACQ, "GPS Data - Lat: %.5f, Lon: %.5f, Alt: %.2f", gps_data->latitude, gps_data->longitude, gps_data->gps_altitude);
+                    continue; // successfully parsed a GPGGA line
                 }
             }
         size_t remaining = line_len - (start - line);
