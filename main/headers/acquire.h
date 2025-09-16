@@ -8,7 +8,7 @@
 #define G 9.80665
 
 #define R1 10000.0f // Resistor connected to battery positive terminal
-#define R2 20000.0f  // Resistor connected to ground
+#define R2 20000.0f // Resistor connected to ground
 
 #define GPS_BAUD_RATE 115200
 
