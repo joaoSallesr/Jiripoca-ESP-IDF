@@ -6,7 +6,7 @@
 static const char *TAG_ACQ = "Acquire";
 static const char *TAG_ICM = "ICM20948";
 
-void init_icm20948(icm20948_device_t icm)
+void init_icm20948(icm20948_device_t *icm)
 {
 
     // standard ic2 bus config from component example
@@ -27,24 +27,24 @@ void init_icm20948(icm20948_device_t icm)
 	ESP_ERROR_CHECK(i2c_driver_install(icm_config.i2c_port, bus_config.mode, 0, 0, 0));
 
     // setup ICM20948
-    icm20948_init_i2c(&icm, &icm_config);
+    icm20948_init_i2c(icm, &icm_config);
 }
 
-void acquire_icm20948(data_t *data, icm20948_device_t icm, icm20948_agmt_t agmt) // revisar uso de ponteiro? 
+void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agmt)
 {
     xSemaphoreTake(xI2CMutex, portMAX_DELAY);
-    if (icm20948_get_agmt(&icm, &agmt) != ICM_20948_STAT_OK) 
+    if (icm20948_get_agmt(icm, agmt) != ICM_20948_STAT_OK) 
         ESP_LOGE(TAG_ICM, "Failed to read ICM20948");
 
-    data->accel_x = agmt.acc.axes.x;
-    data->accel_y = agmt.acc.axes.y;
-    data->accel_z = agmt.acc.axes.z;
-    data->rotation_x = agmt.gyr.axes.x;
-    data->rotation_y = agmt.gyr.axes.y;
-    data->rotation_z = agmt.gyr.axes.z;
-    data->magnet_x = agmt.mag.axes.x;
-    data->magnet_y = agmt.mag.axes.y;
-    data->magnet_z = agmt.mag.axes.z;  
+    data->accel_x = agmt->acc.axes.x;
+    data->accel_y = agmt->acc.axes.y;
+    data->accel_z = agmt->acc.axes.z;
+    data->rotation_x = agmt->gyr.axes.x;
+    data->rotation_y = agmt->gyr.axes.y;
+    data->rotation_z = agmt->gyr.axes.z;
+    data->magnet_x = agmt->mag.axes.x;
+    data->magnet_y = agmt->mag.axes.y;
+    data->magnet_z = agmt->mag.axes.z;  
 
     xSemaphoreGive(xI2CMutex);
     vTaskDelay(0);
@@ -195,7 +195,7 @@ void task_acquire(void *pvParameters)
     // ICM20948 
     icm20948_device_t icm;
     icm20948_agmt_t agmt;
-    init_icm20948(icm);
+    init_icm20948(&icm);
 
     // BMP390
 
@@ -215,7 +215,7 @@ void task_acquire(void *pvParameters)
         xSemaphoreGive(xStatusMutex);
 
         // ICM20948
-        acquire_icm20948(&data, icm, agmt);
+        acquire_icm20948(&data, &icm, &agmt);
 
 
         // BMP390
