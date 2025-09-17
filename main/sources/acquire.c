@@ -229,11 +229,13 @@ void task_acquire(void *pvParameters)
                           "\tBMP\t\tP: %.2f, T: %.2f, A: %.2f\r\n"
                           "\tAccel\t\tX: %.2f, Y: %.2f, Z: %.2f\r\n"
                           "\tGyro\t\tH: %.2f, P: %.2f, Y: %.2f\r\n"
+                          "\tMagnet\t\tX: %.2f, Y: %.2f, Z: %.2f\r\n"
                           "\tGPS\t\tLat: %.5f, Lon: %.5f, A-GPS: %.2f",
                  data.time, data.status, data.voltage,
                  data.pressure, data.temperature, data.bmp_altitude,
                  data.accel_x, data.accel_y, data.accel_z,
                  data.rotation_x, data.rotation_y, data.rotation_z,
+                 data.magnet_x, data.magnet_y, data.magnet_z,
                  data.latitude, data.longitude, data.gps_altitude);
 
         send_queues(&data);
