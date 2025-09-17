@@ -1,6 +1,7 @@
 #include "acquire.h"
 
 static const char *TAG_ACQ = "Acquire";
+static const float SEA_LEVEL_PRESSURE_HPA = 1013.25f;
 
 void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
 {
@@ -64,7 +65,7 @@ void acquire_bmp390(data_t *data, bmp390_handle_t* dev_hdl)
 
     float temp_altitude = 0;
     // BMP390 altitude calculation (barometric formula)
-    temp_altitude = 44330.0f * (1.0f - powf(data->pressure / 1013.25f, 1.0f / 5.255f));
+    temp_altitude = 44330.0f * (1.0f - powf(data->pressure / SEA_LEVEL_PRESSURE_HPA, 1.0f / 5.255f));
 
     if (temp_altitude > data->max_altitude)
         data->max_altitude = temp_altitude;
