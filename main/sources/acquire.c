@@ -164,7 +164,7 @@ void task_acquire(void *pvParameters)
         data.status = STATUS;
         xSemaphoreGive(xStatusMutex);
 
-        acquire_bmp390(&data, &dev_bmp);
+        acquire_bmp390(&data, &dev_hdl);
 
         status_checks(&data);
 
