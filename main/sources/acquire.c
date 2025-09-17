@@ -47,27 +47,29 @@ void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
 void acquire_bmp390(data_t *data, bmp390_handle_t* dev_hdl)
 {
     ESP_LOGI(APP_TAG, "######################## BMP390 - START #########################");
-        //
-        
-        // sensor readings
-        if (bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure); != ESP_OK)
-            ESP_LOGE(APP_TAG, "bmp390 device read failed (%s)", esp_err_to_name(result));
-        else {
-            pressure = pressure / 100;
-            ESP_LOGI(APP_TAG, "air temperature:     %.2f °C", temperature);
-            ESP_LOGI(APP_TAG, "barometric pressure: %.2f hPa", pressure);
-        }
 
-        // necessario revisar
-        float temp_altitude = 0;
-        BMP280 altitude calculation (barometric formula)
-        temp_altitude = 44330 * (1 - powf(data->pressure / 101325, 1 / 5.255));
+    // sensor readings
+    esp_err_t result = bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure);
+    
+    if (result != ESP_OK)
+    {
+        ESP_LOGE(APP_TAG, "bmp390 device read failed (%s)", esp_err_to_name(result));
+    }
+    else 
+    {
+        data->pressure = data->pressure / 100.0f;
+        ESP_LOGI(APP_TAG, "air temperature:      %.2f °C", data->temperature);
+        ESP_LOGI(APP_TAG, "barometric pressure: %.2f hPa", data->pressure);
+    }
 
-        if (temp_altitude > data->max_altitude)
-            data->max_altitude = temp_altitude;
-        data->bmp_altitude = temp_altitude;
-        
-        //
+    float temp_altitude = 0;
+    // BMP390 altitude calculation (barometric formula)
+    temp_altitude = 44330.0f * (1.0f - powf(data->pressure / 1013.25f, 1.0f / 5.255f));
+
+    if (temp_altitude > data->max_altitude)
+        data->max_altitude = temp_altitude;
+    data->bmp_altitude = temp_altitude;
+    
     ESP_LOGI(APP_TAG, "######################## BMP390 - END ###########################");
 }
 
