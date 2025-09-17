@@ -15,7 +15,6 @@
 
 #include "esp_log.h"
 #include "esp_timer.h"
-#include "esp_mac.h" //revisar
 
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -26,8 +25,8 @@
 #define LED_GPIO 15
 #define ALED_GPIO 6
 #define BUTTON_GPIO 0
-#define DROGUE_GPIO 47
-#define MAIN_GPIO 48
+#define DROGUE_GPIO 48
+#define MAIN_GPIO 47
 #define RBF_GPIO 4
 #define GPS_RX 21
 #define I2C_SCL 9
