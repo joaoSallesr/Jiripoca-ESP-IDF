@@ -30,12 +30,12 @@ void init_icm20948(icm20948_device_t *icm)
     icm20948_init_i2c(icm, &icm_config);
     
     // reset device state -> test later to see if it's really necessary
-    icm20948_sw_reset(&icm);
+    icm20948_sw_reset(icm);
 	vTaskDelay(pdMS_TO_TICKS(250));
 
     // wake up sensor -> test later to see if it's really necessary
-    icm20948_sleep(&icm, false);
-	icm20948_low_power(&icm, false);
+    icm20948_sleep(icm, false);
+	icm20948_low_power(icm, false);
 }
 
 void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agmt)
