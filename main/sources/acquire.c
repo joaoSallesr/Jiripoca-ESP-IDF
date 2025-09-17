@@ -132,9 +132,10 @@ void task_gps(void *pvParameters){
                 *newline = '\0'; // replace newline with null terminator
                 if (parse_gpgga_line(start, gps_data)){
                     // if the line is a valid GPGGA sentence, update gps_data
-                    //ESP_LOGI(TAG_ACQ, "GPS Data - Lat: %.5f, Lon: %.5f, Alt: %.2f", gps_data->latitude, gps_data->longitude, gps_data->gps_altitude);
-                    continue; // successfully parsed a GPGGA line
+                    // ESP_LOGI(TAG_ACQ, "GPS Data - Lat: %.5f, Lon: %.5f, Alt: %.2f", gps_data->latitude, gps_data->longitude, gps_data->gps_altitude);
+                    // successfully parsed a GPGGA line
                 }
+                start = newline + 1; // move to the start of the next line
             }
         size_t remaining = line_len - (start - line);
         // calculate how many bytes remain after the last processed '\n'
@@ -150,6 +151,7 @@ void task_gps(void *pvParameters){
     free(line);
     uart_driver_delete(uart_num);
 }
+
 //     bmp390_init(i2c0_bus_hdl, &dev_cfg, &dev_hdl);
 //     if (dev_hdl == NULL) {
 //         ESP_LOGE(APP_TAG, "bmp390 handle init failed");
