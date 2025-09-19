@@ -2,74 +2,217 @@
 
 static const char *TAG_ACQ = "Acquire";
 
-void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
-{
-    // init device
-    bmp390_init(i2c0_bus_hdl, &dev_cfg, &dev_hdl);
-    if (dev_hdl == NULL) {
-        ESP_LOGE(APP_TAG, "bmp390 handle init failed");
-        assert(dev_hdl);
+void adc_init(adc_oneshot_unit_handle_t *adc_unit_handle, adc_cali_handle_t *adc_cali_handle) {
+    adc_oneshot_unit_init_cfg_t unit_config = {
+        .unit_id = ADC_UNIT_1,
+        .ulp_mode = ADC_ULP_MODE_DISABLE
+    };
+    adc_oneshot_new_unit(&unit_config, adc_unit_handle);
+
+    // Configure the ADC channel
+    adc_oneshot_chan_cfg_t channel_config = {
+        .atten = ADC_ATTEN_DB_12,             
+        .bitwidth = ADC_BITWIDTH_DEFAULT
+    };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(*adc_unit_handle, ADC_CHANNEL_4, &channel_config));
+
+    // Configure calibration (raw ADC value in mV)
+    adc_cali_curve_fitting_config_t cali_config = {
+        .unit_id = ADC_UNIT_1,
+        .chan = ADC_CHANNEL_4,
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT
+    };
+    ESP_ERROR_CHECK(adc_cali_create_scheme_curve_fitting(&cali_config, adc_cali_handle));
+}
+
+float read_battery_voltage(adc_oneshot_unit_handle_t adc_unit_handle, adc_cali_handle_t adc_cali_handle) {
+    int raw;
+    ESP_ERROR_CHECK(adc_oneshot_read(adc_unit_handle, ADC_CHANNEL_4, &raw));
+
+    int voltage_mv;
+    ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc_cali_handle, raw, &voltage_mv));
+
+    // Calculate actual battery voltage based on voltage divider ratio
+    float battery_voltage = (voltage_mv / 1000.0f) * ((R1 + R2) / R2); // Convert mV to V and apply divider ratio
+    // (R1 + R2) / R2 = 1.5 for R1=10k and R2=20k
+    return battery_voltage;
+}
+
+static float lat_lon_conversion(float ddmm) {
+    int deg = (int)(ddmm / 100.0f);
+    float min = ddmm - (deg * 100.0f);
+    return deg + (min / 60.0f);
+}
+// since the GPGGA sentence gives us latitude/longitude in ddmm.mmmm values,
+// it was necessary to create a function that would transform this into decimal values
+
+static bool parse_gpgga_line(char *line, data_t *data) {
+    if (strncmp(line, "$GPGGA", 6) != 0){
+        return false;
+    }
+    // this will check if the sentence received by the gps is $GPGGA
+
+    char *fields[15] = {0}; 
+    size_t field_count = 0; // auxiliary variable used by strtok_r.
+    // necessary because strtok_r needs context to remember where it left off.
+    char *context = NULL;    
+
+    for (char *field = strtok_r(line, ",", &context);
+         field && field_count < 15;
+         field = strtok_r(NULL, ",", &context)) 
+    {
+        fields[field_count++] = field;
+    }
+    // strtok_r is from the string library, it will break the string into diferent tokens/"fields"
+    // each field is a GPS information
+
+    // latitude (field 2 + field 3)
+    if (fields[2] && *fields[2] && fields[3]) {
+        float raw_lat = atof(fields[2]);
+        data->latitude = lat_lon_conversion(raw_lat);
+        if (fields[3][0] == 'S') data->latitude = -data->latitude;
+        // the coordinates are negative at south and west
+    }
+    // longitude (field 4 + field 5)
+    if (fields[4] && *fields[4] && fields[5]) {
+        float raw_lon = atof(fields[4]);
+        data->longitude = lat_lon_conversion(raw_lon);
+        if (fields[5][0] == 'W') data->longitude = -data->longitude;
+    }
+    // altitude (field 9)
+    if (fields[9] && *fields[9]) {
+        data->gps_altitude = atof(fields[9]);
     }
 
-    /* configuration registers */
-    bmp390_power_control_register_t     power_ctrl_reg;
-    bmp390_configuration_register_t     config_reg;
-    bmp390_oversampling_register_t      oversampling_reg;
-    bmp390_output_data_rate_register_t  output_data_rate_reg;
-    bmp390_interrupt_control_register_t interrupt_ctrl_reg;
-
-    /* attempt to read configuration register */
-    bmp390_get_configuration_register(dev_hdl, &config_reg);
-
-    /* attempt to read oversampling register */
-    bmp390_get_oversampling_register(dev_hdl, &oversampling_reg);
-
-    /* attempt to read to power control register */
-    bmp390_get_power_control_register(dev_hdl, &power_ctrl_reg);
-
-    /* attempt to read to output data rate register */
-    bmp390_get_output_data_rate_register(dev_hdl, &output_data_rate_reg);
-
-    /* attempt to read to interrupt control register */
-    bmp390_get_interrupt_control_register(dev_hdl, &interrupt_ctrl_reg);
-
-
-    ESP_LOGI(APP_TAG, "Configuration (0x%02x): %s", config_reg.reg,           uint8_to_binary(config_reg.reg));
-    ESP_LOGI(APP_TAG, "Oversampling  (0x%02x): %s", oversampling_reg.reg,     uint8_to_binary(oversampling_reg.reg));
-    ESP_LOGI(APP_TAG, "Data Rate     (0x%02x): %s", output_data_rate_reg.reg, uint8_to_binary(output_data_rate_reg.reg));
-    ESP_LOGI(APP_TAG, "Power Control (0x%02x): %s", power_ctrl_reg.reg,       uint8_to_binary(power_ctrl_reg.reg));
-    ESP_LOGI(APP_TAG, "Int Control   (0x%02x): %s", interrupt_ctrl_reg.reg,   uint8_to_binary(interrupt_ctrl_reg.reg));
-
-    if(interrupt_ctrl_reg.bits.irq_data_ready_enabled)
-        ESP_LOGE(APP_TAG, "bmp390 irq data ready is enabled");
+    return true;
 }
 
-void acquire_bmp390(data_t *data, bmp390_handle_t* dev_hdl)
-{
-    ESP_LOGI(APP_TAG, "######################## BMP390 - START #########################");
-        //
-        
-        // sensor readings
-        if (bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure); != ESP_OK)
-            ESP_LOGE(APP_TAG, "bmp390 device read failed (%s)", esp_err_to_name(result));
-        else {
-            pressure = pressure / 100;
-            ESP_LOGI(APP_TAG, "air temperature:     %.2f °C", temperature);
-            ESP_LOGI(APP_TAG, "barometric pressure: %.2f hPa", pressure);
+void task_gps(void *pvParameters){
+
+    data_t *gps_data = (data_t *)pvParameters;
+
+    uart_port_t uart_num = UART_NUM_1;
+    const int uart_buffer_size = 2048;
+    QueueHandle_t uart_queue;
+    uart_config_t gps_uart_config = {
+        .baud_rate = GPS_BAUD_RATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity    = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
+    };
+
+    uart_param_config(uart_num, &gps_uart_config);
+
+    uart_set_pin(uart_num, GPS_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+
+    uart_driver_install(uart_num, uart_buffer_size, uart_buffer_size, 20, &uart_queue, 0);
+
+    char line[128];
+    size_t line_len = 0;
+    uint8_t uart_rx[64];
+
+    while (true) {
+        // it starts readding the data from the gps
+        // until it finds a newline character, which indicates the end of a sentence
+        int len = uart_read_bytes(uart_num, uart_rx, sizeof(uart_rx), pdMS_TO_TICKS(1000));
+        if (len > 0) {
+            line_len += len;
+            line[line_len] = '\0'; // null terminate the string
+
+            // look for newline characters to identify complete lines
+            char *start = line;
+            char *newline;
+            while ((newline = strchr(start, '\n')) != NULL) {
+                *newline = '\0'; // replace newline with null terminator
+                if (parse_gpgga_line(start, gps_data)){
+                    // if the line is a valid GPGGA sentence, update gps_data
+                    // ESP_LOGI(TAG_ACQ, "GPS Data - Lat: %.5f, Lon: %.5f, Alt: %.2f", gps_data->latitude, gps_data->longitude, gps_data->gps_altitude);
+                    // successfully parsed a GPGGA line
+                }
+                start = newline + 1; // move to the start of the next line
+            }
+        size_t remaining = line_len - (start - line);
+        // calculate how many bytes remain after the last processed '\n'
+        memmove(line, start, remaining);
+        // shift the remaining bytes to the beginning of the buffer
+        // this ensures that incomplete data is kept for the next UART read
+        line_len = remaining;
+        // update the line length to match the number of leftover bytes
         }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 
-        // necessario revisar
-        float temp_altitude = 0;
-        BMP280 altitude calculation (barometric formula)
-        temp_altitude = 44330 * (1 - powf(data->pressure / 101325, 1 / 5.255));
-
-        if (temp_altitude > data->max_altitude)
-            data->max_altitude = temp_altitude;
-        data->bmp_altitude = temp_altitude;
-        
-        //
-    ESP_LOGI(APP_TAG, "######################## BMP390 - END ###########################");
+    free(line);
+    uart_driver_delete(uart_num);
 }
+
+//     bmp390_init(i2c0_bus_hdl, &dev_cfg, &dev_hdl);
+//     if (dev_hdl == NULL) {
+//         ESP_LOGE(APP_TAG, "bmp390 handle init failed");
+//         assert(dev_hdl);
+//     }
+
+//     /* configuration registers */
+//     bmp390_power_control_register_t     power_ctrl_reg;
+//     bmp390_configuration_register_t     config_reg;
+//     bmp390_oversampling_register_t      oversampling_reg;
+//     bmp390_output_data_rate_register_t  output_data_rate_reg;
+//     bmp390_interrupt_control_register_t interrupt_ctrl_reg;
+
+//     /* attempt to read configuration register */
+//     bmp390_get_configuration_register(dev_hdl, &config_reg);
+
+//     /* attempt to read oversampling register */
+//     bmp390_get_oversampling_register(dev_hdl, &oversampling_reg);
+
+//     /* attempt to read to power control register */
+//     bmp390_get_power_control_register(dev_hdl, &power_ctrl_reg);
+
+//     /* attempt to read to output data rate register */
+//     bmp390_get_output_data_rate_register(dev_hdl, &output_data_rate_reg);
+
+//     /* attempt to read to interrupt control register */
+//     bmp390_get_interrupt_control_register(dev_hdl, &interrupt_ctrl_reg);
+
+
+//     ESP_LOGI(APP_TAG, "Configuration (0x%02x): %s", config_reg.reg,           uint8_to_binary(config_reg.reg));
+//     ESP_LOGI(APP_TAG, "Oversampling  (0x%02x): %s", oversampling_reg.reg,     uint8_to_binary(oversampling_reg.reg));
+//     ESP_LOGI(APP_TAG, "Data Rate     (0x%02x): %s", output_data_rate_reg.reg, uint8_to_binary(output_data_rate_reg.reg));
+//     ESP_LOGI(APP_TAG, "Power Control (0x%02x): %s", power_ctrl_reg.reg,       uint8_to_binary(power_ctrl_reg.reg));
+//     ESP_LOGI(APP_TAG, "Int Control   (0x%02x): %s", interrupt_ctrl_reg.reg,   uint8_to_binary(interrupt_ctrl_reg.reg));
+
+//     if(interrupt_ctrl_reg.bits.irq_data_ready_enabled)
+//         ESP_LOGE(APP_TAG, "bmp390 irq data ready is enabled");
+// }
+
+// void acquire_bmp390(data_t *data, bmp390_handle_t* dev_hdl)
+// {
+//     ESP_LOGI(APP_TAG, "######################## BMP390 - START #########################");
+//         //
+        
+//         // sensor readings
+//         if (bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure); != ESP_OK)
+//             ESP_LOGE(APP_TAG, "bmp390 device read failed (%s)", esp_err_to_name(result));
+//         else {
+//             pressure = pressure / 100;
+//             ESP_LOGI(APP_TAG, "air temperature:     %.2f °C", temperature);
+//             ESP_LOGI(APP_TAG, "barometric pressure: %.2f hPa", pressure);
+//         }
+
+//         // necessario revisar
+//         float temp_altitude = 0;
+//         BMP280 altitude calculation (barometric formula)
+//         temp_altitude = 44330 * (1 - powf(data->pressure / 101325, 1 / 5.255));
+
+//         if (temp_altitude > data->max_altitude)
+//             data->max_altitude = temp_altitude;
+//         data->bmp_altitude = temp_altitude;
+        
+//         //
+//     ESP_LOGI(APP_TAG, "######################## BMP390 - END ###########################");
+// }
 
 // status_checks checks if the rocket is flying, motor is cutoff, or landed
 void status_checks(data_t *data)
@@ -143,11 +286,16 @@ void task_acquire(void *pvParameters)
 
     data_t data = {0};
 
-    // init bmp390
-    bmp390_config_t dev_cfg = I2C_BMP390_CONFIG_DEFAULT;
-    bmp390_handle_t dev_hdl;
-    init_bmp390(&dev_cfg, &dev_hdl);
+    // // init bmp390
+    // bmp390_config_t dev_cfg = I2C_BMP390_CONFIG_DEFAULT;
+    // bmp390_handle_t dev_hdl;
+    // init_bmp390(&dev_cfg, &dev_hdl);
 
+    xTaskCreate(task_gps, "GPS", configMINIMAL_STACK_SIZE * 4, &data, 6, NULL);
+
+    adc_oneshot_unit_handle_t adc_unit_handle;
+    adc_cali_handle_t adc_cali_handle;
+    adc_init(&adc_unit_handle, &adc_cali_handle);
 
     vTaskDelay(pdMS_TO_TICKS(1000));
     while (true)
@@ -158,8 +306,8 @@ void task_acquire(void *pvParameters)
         data.status = STATUS;
         xSemaphoreGive(xStatusMutex);
 
-        acquire_bmp390(&data, &dev_bmp);
-
+        // acquire_bmp390(&data, &dev_bmp);
+        data.voltage = read_battery_voltage(adc_unit_handle, adc_cali_handle);
         status_checks(&data);
 
         // Print data
@@ -179,6 +327,6 @@ void task_acquire(void *pvParameters)
         // REDUCE AFTER OPTIMIZING CODE
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-    bmp390_delete(dev_hdl);
+    // bmp390_delete(dev_hdl);
     vTaskDelete(NULL);
 }
