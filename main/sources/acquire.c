@@ -44,6 +44,7 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
     if (icm20948_get_agmt(icm, agmt) != ICM_20948_STAT_OK) 
         ESP_LOGE(TAG_ICM, "Failed to read ICM20948");
 
+    // agmt -> Accel, Gyro, Mag, Temp 
     data->accel_x = agmt->acc.axes.x;
     data->accel_y = agmt->acc.axes.y;
     data->accel_z = agmt->acc.axes.z;
