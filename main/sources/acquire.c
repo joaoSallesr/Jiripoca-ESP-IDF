@@ -276,7 +276,10 @@ void send_queues(data_t *data)
         if (!(data->status & LFS_FULL)) // If LittleFS is not full, send to LittleFS queue
             xQueueSend(xLittleFSQueue, data, 0);
     }
-
+    
+    if (xLoraQueue != NULL){
+            xQueueSend(xLoraQueue, data, 0);
+    }
     // ESP_LOGI("Acquire", "Data sent to queues");
 }
 

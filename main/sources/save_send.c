@@ -270,3 +270,23 @@ void task_littlefs(void *pvParameters)
             xSemaphoreGive(xStatusMutex);
     }
 }
+
+void lora_init(void)
+{
+    uart_config_t uart_config = {
+        .baud_rate = LORA_BAUD_RATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity    = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
+    };
+
+    ESP_ERROR_CHECK(uart_param_config(LORA_UART_NUM, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(LORA_UART_NUM, E220_TX, E220_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_driver_install(LORA_UART_NUM, 2048, 2048, 0, NULL, 0));
+
+    gpio_reset_pin(E220_AUX);
+    gpio_set_direction(E220_AUX, GPIO_MODE_INPUT);
+
+    ESP_LOGI(TAG_LORA, "LoRa UART initialized (baud %d)", LORA_BAUD_RATE);
+}
