@@ -9,7 +9,7 @@ static const char *TAG_ICM = "ICM20948";
 void init_icm20948(icm20948_device_t *icm)
 {
 
-    // standard ic2 bus config
+    // standard i2c bus config
     i2c_config_t bus_config = { .mode = I2C_MODE_MASTER,
 	                            .sda_io_num = (gpio_num_t) I2C_SDA,
 	                            .sda_pullup_en = GPIO_PULLUP_ENABLE,
@@ -22,7 +22,7 @@ void init_icm20948(icm20948_device_t *icm)
     icm0948_config_i2c_t icm_config = { .i2c_port = I2C_MASTER_NUM,
 	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD0 };
 
-    // ICM20948 config 
+    // ICM20948 scale range config 
     icm20948_fss_t myfss = {.a = GPM_16,
                             .g = DPS_2000, 
 
@@ -54,6 +54,7 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
     if (icm20948_get_agmt(icm, agmt) != ICM_20948_STAT_OK) 
         ESP_LOGE(TAG_ICM, "Failed to read ICM20948");
 
+    // acquire data and apply scale factor
     data->accel_x = agmt->acc.axes.x/ICM_SCALE_16G;
     data->accel_y = agmt->acc.axes.y/ICM_SCALE_16G;
     data->accel_z = agmt->acc.axes.z/ICM_SCALE_16G;

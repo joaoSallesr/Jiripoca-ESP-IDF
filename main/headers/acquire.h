@@ -7,7 +7,15 @@
 #include "icm20948_i2c.h"
 
 #define G 9.80665
+
+#define ICM_SCALE_2G 16384.0f
+#define ICM_SCALE_4G 8192.0f
+#define ICM_SCALE_8G 4096.0f 
 #define ICM_SCALE_16G 2048.0f
+
+#define ICM_SCALE_250DPS 131.0f
+#define ICM_SCALE_500DPS 65.5f
+#define ICM_SCALE_1000DPS 32.8f
 #define ICM_SCALE_2000DPS 16.4f
 
 
