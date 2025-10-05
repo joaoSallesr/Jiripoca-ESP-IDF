@@ -9,7 +9,7 @@ static const char *TAG_ICM = "ICM20948";
 void init_icm20948(icm20948_device_t *icm)
 {
 
-    // standard ic2 bus config from component example
+    // standard ic2 bus config
     i2c_config_t bus_config = { .mode = I2C_MODE_MASTER,
 	                            .sda_io_num = (gpio_num_t) I2C_SDA,
 	                            .sda_pullup_en = GPIO_PULLUP_ENABLE,
@@ -18,10 +18,16 @@ void init_icm20948(icm20948_device_t *icm)
 	                            .master.clk_speed = I2C_MASTER_FREQ_HZ,
 	                            .clk_flags = 0 };
 
-    // standard ICM20948 config from component example
+    // standard ICM20948 config
     icm0948_config_i2c_t icm_config = { .i2c_port = I2C_MASTER_NUM,
-	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD1 };
+	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD0 };
 
+    // ICM20948 config 
+    icm20948_fss_t myfss = {.a = GPM_16,
+                            .g = DPS_2000, 
+
+    };
+     
     // setup i2c
 	ESP_ERROR_CHECK(i2c_param_config(icm_config.i2c_port, &bus_config));
 	ESP_ERROR_CHECK(i2c_driver_install(icm_config.i2c_port, bus_config.mode, 0, 0, 0));
@@ -29,13 +35,17 @@ void init_icm20948(icm20948_device_t *icm)
     // setup ICM20948
     icm20948_init_i2c(icm, &icm_config);
     
-    // reset device state -> test later to see if it's really necessary
+    // reset device state
     icm20948_sw_reset(icm);
 	vTaskDelay(pdMS_TO_TICKS(250));
 
-    // wake up sensor -> test later to see if it's really necessary
+    icm20948_internal_sensor_id_bm sensors = (icm20948_internal_sensor_id_bm)(ICM_20948_INTERNAL_ACC | ICM_20948_INTERNAL_GYR);
+    icm20948_set_sample_mode(&icm, sensors, SAMPLE_MODE_CONTINUOUS); 
+
+    // wake up sensor with scale applied
     icm20948_sleep(icm, false);
 	icm20948_low_power(icm, false);
+    icm20948_set_full_scale(&icm, sensors, myfss);
 }
 
 void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agmt)
@@ -44,15 +54,12 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
     if (icm20948_get_agmt(icm, agmt) != ICM_20948_STAT_OK) 
         ESP_LOGE(TAG_ICM, "Failed to read ICM20948");
 
-    data->accel_x = agmt->acc.axes.x;
-    data->accel_y = agmt->acc.axes.y;
-    data->accel_z = agmt->acc.axes.z;
-    data->rotation_x = agmt->gyr.axes.x;
-    data->rotation_y = agmt->gyr.axes.y;
-    data->rotation_z = agmt->gyr.axes.z;
-    data->magnet_x = agmt->mag.axes.x;
-    data->magnet_y = agmt->mag.axes.y;
-    data->magnet_z = agmt->mag.axes.z;  
+    data->accel_x = agmt->acc.axes.x/ICM_SCALE_16G;
+    data->accel_y = agmt->acc.axes.y/ICM_SCALE_16G;
+    data->accel_z = agmt->acc.axes.z/ICM_SCALE_16G;
+    data->rotation_x = agmt->gyr.axes.x/ICM_SCALE_2000DPS;
+    data->rotation_y = agmt->gyr.axes.y/ICM_SCALE_2000DPS;
+    data->rotation_z = agmt->gyr.axes.z/ICM_SCALE_2000DPS;
 
     xSemaphoreGive(xI2CMutex);
     vTaskDelay(0);
@@ -237,13 +244,11 @@ void task_acquire(void *pvParameters)
                           "\tBMP\t\tP: %.2f, T: %.2f, A: %.2f\r\n"
                           "\tAccel\t\tX: %.2f, Y: %.2f, Z: %.2f\r\n"
                           "\tGyro\t\tH: %.2f, P: %.2f, Y: %.2f\r\n"
-                          "\tMagnet\t\tX: %.2f, Y: %.2f, Z: %.2f\r\n"
                           "\tGPS\t\tLat: %.5f, Lon: %.5f, A-GPS: %.2f",
                  data.time, data.status, data.voltage,
                  data.pressure, data.temperature, data.bmp_altitude,
                  data.accel_x, data.accel_y, data.accel_z,
                  data.rotation_x, data.rotation_y, data.rotation_z,
-                 data.magnet_x, data.magnet_y, data.magnet_z,
                  data.latitude, data.longitude, data.gps_altitude);
 
         send_queues(&data);
