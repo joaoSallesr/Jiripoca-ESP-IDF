@@ -103,24 +103,27 @@ void task_sd(void *pvParameters)
     while (true)
     {
         data_t data;
-        data_t buffer[CONFIG_SD_BUFFER_SIZE / sizeof(data_t)];
+        data_t buffer[SD_BUFFER_COUNT]; 
 
         // Read data from queue
-        /*verificar se essa eh a forma ideal*/
-        for (int i = 0; i < CONFIG_SD_BUFFER_SIZE / sizeof(data_t); ++i)
+        for (int i = 0; i < SD_BUFFER_COUNT; ++i)
         {
-            xQueueReceive(xSDQueue, &data, portMAX_DELAY);
-            buffer[i] = data;
+            xQueueReceive(xSDQueue, &buffer[i], portMAX_DELAY); // TESTAR
+            //xQueueReceive(xSDQueue, &data, portMAX_DELAY);
+            //buffer[i] = data;
         }
 
         // Write buffer to file
         f = fopen(log_name, "a");
-        if (f == NULL)
+        if (f == NULL) //rever esse f == NULL
         {
             ESP_LOGE(TAG_SD, "Failed to open file for writing");
         }
-        fwrite(buffer, sizeof(data_t), CONFIG_SD_BUFFER_SIZE / sizeof(data_t), f);
+        fwrite(buffer, sizeof(data_t), SD_BUFFER_COUNT, f);
+        
+        fflush(f); // TESTAR
         fclose(f);
+
         ESP_LOGI(TAG_SD, "Data written to SD card");
 
         // Check if landed

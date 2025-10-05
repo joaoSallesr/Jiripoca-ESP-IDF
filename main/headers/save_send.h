@@ -19,7 +19,7 @@
 #define SD_TRANSF_SIZE 4000
 #define SD_MAX_FILES 5
 #define SD_UNIT_SIZE 16 * 1024
-
+#define SD_BUFFER_COUNT (CONFIG_SD_BUFFER_SIZE / sizeof(data_t))
 
 #endif
 
