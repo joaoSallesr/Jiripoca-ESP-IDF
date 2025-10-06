@@ -13,7 +13,7 @@
 #include "esp_littlefs.h"
 #include "driver/uart.h"
 
-#define LORA_BAUD_RATE 9600
+#define LORA_BAUD_RATE 115200
 #define LORA_UART_NUM UART_NUM_2
 
 #define MAX_USED 0.8 // Maximum percentage of flash to be used by littlefs
