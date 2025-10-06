@@ -173,6 +173,7 @@ void app_main(void)
     // Create Queues
     xAltQueue = xQueueCreate(2, sizeof(float));
     xLittleFSQueue = xQueueCreate(2, sizeof(data_t));
+    xLoraQueue = xQueueCreate(2, sizeof(data_t));
 
     // Initialize NVS to store file counters
     esp_err_t err = nvs_flash_init();

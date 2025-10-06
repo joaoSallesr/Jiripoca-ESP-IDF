@@ -290,3 +290,35 @@ void lora_init(void)
 
     ESP_LOGI(TAG_LORA, "LoRa UART initialized (baud %d)", LORA_BAUD_RATE);
 }
+
+void task_lora(void *pvParameters)
+{
+    data_t data;
+
+    lora_init();
+
+    while (true)
+    {
+        if (xQueueReceive(xLoraQueue, &data, portMAX_DELAY) == pdTRUE)
+        {
+            while (gpio_get_level(E220_AUX) == 0){
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
+            
+            int written = uart_write_bytes(LORA_UART_NUM, (const char *)&data, sizeof(data_t));
+
+            // if (written == sizeof(data_t))
+            // {
+            //     ESP_LOGI(TAG_LORA, "LoRa packet sent (%d bytes)", written);
+            // }
+
+            if (written != sizeof(data_t))
+            {
+                ESP_LOGE(TAG_LORA, "Failed to send LoRa packet (%d bytes written)", written);
+            }
+
+            while (gpio_get_level(E220_AUX) == 0)
+                vTaskDelay(pdMS_TO_TICKS(1));
+        }
+    }
+}
