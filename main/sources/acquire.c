@@ -40,12 +40,12 @@ void init_icm20948(icm20948_device_t *icm)
 	vTaskDelay(pdMS_TO_TICKS(250));
 
     icm20948_internal_sensor_id_bm sensors = (icm20948_internal_sensor_id_bm)(ICM_20948_INTERNAL_ACC | ICM_20948_INTERNAL_GYR);
-    icm20948_set_sample_mode(&icm, sensors, SAMPLE_MODE_CONTINUOUS); 
+    icm20948_set_sample_mode(icm, sensors, SAMPLE_MODE_CONTINUOUS); 
 
     // wake up sensor with scale applied
     icm20948_sleep(icm, false);
 	icm20948_low_power(icm, false);
-    icm20948_set_full_scale(&icm, sensors, myfss);
+    icm20948_set_full_scale(icm, sensors, myfss);
 }
 
 void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agmt)
