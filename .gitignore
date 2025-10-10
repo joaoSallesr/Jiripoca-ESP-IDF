@@ -8,3 +8,7 @@ managed_components/
 .vscode/*
 !.vscode/tasks.json
 !.vscode/extensions.json
+
+.clangd
+sdkconfig
+sdkconfig.old
