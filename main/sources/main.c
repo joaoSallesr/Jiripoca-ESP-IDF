@@ -7,11 +7,11 @@
 
 // Tags
 static const char *TAG_DEPLOY = "Deploy";
+static const char *TAG_MAIN = "Main";
 
 // task_deploy deploys parachutes
 void task_deploy(void *pvParameters)
 {
-
     gpio_set_direction(DROGUE_GPIO, GPIO_MODE_OUTPUT);
     gpio_set_direction(MAIN_GPIO, GPIO_MODE_OUTPUT);
 
@@ -22,45 +22,49 @@ void task_deploy(void *pvParameters)
     xQueueReceive(xAltQueue, &current_altitude, portMAX_DELAY);
     start_altitude = current_altitude;
 
+    bool acionar_drogue = false;
+    bool acionar_main = false;
+    uint32_t local_status;
+
     while (true)
     {
-        bool acionar_drogue = false;
-        bool acionar_main = false;
+        xSemaphoreTake(xStatusMutex, portMAX_DELAY);
+        local_status = STATUS;
+        xSemaphoreGive(xStatusMutex);
 
         // Get current altitude
         xQueueReceive(xAltQueue, &current_altitude, portMAX_DELAY);
 
-        // Check the disarm and see if it should continue
-        xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-        if (!(STATUS & ARMED))
+        // Check disarm condition
+        if (!(local_status & ARMED))
         {
             // Terminates the task if the system is not armed
-            xSemaphoreGive(xStatusMutex);
-            ESP_LOGE(TAG_DEPLOY, "Disarm command received. Terminating deploy task.");
+            ESP_LOGE(TAG_DEPLOY, "System disarmed. Terminating deploy task.");
+
+            gpio_set_level(LED_GPIO, HIGH);
+            gpio_set_level(BUZZER_GPIO, HIGH);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            gpio_set_level(LED_GPIO, LOW);
+            gpio_set_level(BUZZER_GPIO, LOW);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            for (int i = 0; i < 3; ++i)
+            {
+                gpio_set_level(LED_GPIO, HIGH);
+                gpio_set_level(BUZZER_GPIO, HIGH);
+                vTaskDelay(pdMS_TO_TICKS(50));
+                gpio_set_level(LED_GPIO, LOW);
+                gpio_set_level(BUZZER_GPIO, LOW);
+                vTaskDelay(pdMS_TO_TICKS(950));
+            }
+            
             vTaskDelete(NULL);
         }
-        xSemaphoreGive(xStatusMutex);
         
         // Update max altitude
-        if (current_altitude > max_altitude)
-        {
-            max_altitude = current_altitude;
-        }
+        if (current_altitude > max_altitude) max_altitude = current_altitude;
 
-        xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-
-        if (!(STATUS & DROGUE_DEPLOYED) && (current_altitude < max_altitude - CONFIG_DROGUE_THRESHOLD))
-        {
-            STATUS |= DROGUE_DEPLOYED;
-            acionar_drogue = true;
-        }
-        else if (!(STATUS & MAIN_DEPLOYED) && (current_altitude < start_altitude + CONFIG_MAIN_ALTITUDE))
-        {
-            STATUS |= MAIN_DEPLOYED;
-            acionar_main = true;
-        }
-
-        xSemaphoreGive(xStatusMutex);
+        acionar_drogue = !(local_status & DROGUE_DEPLOYED) && (current_altitude < max_altitude - CONFIG_DROGUE_THRESHOLD);
+        acionar_main = acionar_drogue && !(local_status & MAIN_DEPLOYED) && (current_altitude < start_altitude + CONFIG_MAIN_ALTITUDE);
 
         if (acionar_drogue)
         {
@@ -68,6 +72,10 @@ void task_deploy(void *pvParameters)
             ESP_LOGW(TAG_DEPLOY, "Drogue deployed");
             vTaskDelay(pdMS_TO_TICKS(500));
             gpio_set_level(DROGUE_GPIO, LOW);
+
+            xSemaphoreTake(xStatusMutex, portMAX_DELAY);
+            STATUS |= DROGUE_DEPLOYED;
+            xSemaphoreGive(xStatusMutex);
         }
 
         if (acionar_main)
@@ -77,22 +85,27 @@ void task_deploy(void *pvParameters)
             vTaskDelay(pdMS_TO_TICKS(500));
             gpio_set_level(MAIN_GPIO, LOW);
 
+            xSemaphoreTake(xStatusMutex, portMAX_DELAY);
+            STATUS |= MAIN_DEPLOYED;
+            xSemaphoreGive(xStatusMutex);
+
             // Delete task
             vTaskDelete(NULL);
         }
     }
 }
 
-// task_buzzer_led blinks LED and beeps buzzer to indicate status
+// task_buzzer_led blinks LED and beeps buzzer to indicate landed status
 void task_buzzer_led(void *pvParameters)
 {
+    int32_t status_local;
     while (true)
     {
         vTaskDelay(pdMS_TO_TICKS(1000)); 
                                          
         // Use local copy of STATUS because of delays
         xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-        int32_t status_local = STATUS;
+        status_local = STATUS;
         xSemaphoreGive(xStatusMutex);
 
         // If LANDED, blink LED every second
@@ -170,7 +183,7 @@ static void manage_nvs_counters(bool format_mode, file_counter_t *sd_counter, fi
     ESP_ERROR_CHECK(err);
 
     // Open NVS
-    ESP_LOGI("nvs", "Opening Non-Volatile Storage (NVS) handle... ");
+    ESP_LOGI("NVS", "Opening Non-Volatile Storage (NVS) handle... ");
     nvs_handle_t nvs_handle;
     nvs_open("storage", NVS_READWRITE, &nvs_handle);
     int32_t sd_num = 0;
@@ -213,8 +226,10 @@ void app_main(void)
     // Create Mutexes
     xStatusMutex = xSemaphoreCreateMutex();
     // Create Queues
-    xAltQueue = xQueueCreate(2, sizeof(float));
-    xLittleFSQueue = xQueueCreate(2, sizeof(data_t));
+    static const int alt_queue_size = 10;
+    static const int littlefs_queue_size = 5;
+    xAltQueue = xQueueCreate(alt_queue_size, sizeof(float));
+    xLittleFSQueue = xQueueCreate(littlefs_queue_size, sizeof(data_t));
 
     file_counter_t counter_sd, counter_lfs;
     manage_nvs_counters(format_mode, &counter_sd, &counter_lfs);
@@ -242,37 +257,29 @@ void app_main(void)
     xTaskCreate(task_littlefs, "LittleFS", configMINIMAL_STACK_SIZE * 4, &counter_lfs, 5, NULL);
     xTaskCreate(task_buzzer_led, "Buzzer LED", configMINIMAL_STACK_SIZE * 2, NULL, 3, NULL);
 
+    bool arm = false;
+    bool disarm = false;
+    uint32_t local_status;
+
     while (true)
     {
-        bool just_armed = false;
-        bool just_disarmed = false;
-
         // Logic for arming parachute deployment
         xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-        if (!(STATUS & ARMED)) // If not armed
-        {
-            if (!(STATUS & SAFE_MODE) && gpio_get_level(RBF_GPIO) == LOW) // If not in safe mode and RBF is off
-            {
-                xTaskCreate(task_deploy, "Deploy", configMINIMAL_STACK_SIZE * 2, NULL, 5, NULL); // Start deploy task
-                STATUS |= ARMED;                                                                 // Set ARMED
-                just_armed = true;
-            }
-        }
-
-        else // If already armed, check disarm condition
-        {
-            
-            if (!(STATUS & FLYING) && (gpio_get_level(RBF_GPIO) == HIGH))
-            {
-                STATUS &= (~ARMED);
-                just_disarmed = true;
-            }
-        }
+        local_status = STATUS;
         xSemaphoreGive(xStatusMutex);
+        
+        // If not armed, not in safe mode and RBF is off, arm the system
+        arm = !(local_status & ARMED) && !(local_status & SAFE_MODE) && gpio_get_level(RBF_GPIO) == LOW;
+        // If already armed, check disarm condition
+        disarm = !arm && !(local_status & FLYING) && (gpio_get_level(RBF_GPIO) == HIGH);
 
-        if (just_armed)
+        if (arm)
         {
-            ESP_LOGW("MAIN", "System ARMED. Signaling...");
+            xTaskCreate(task_deploy, "Deploy", configMINIMAL_STACK_SIZE * 2, NULL, 5, NULL); // Start deploy task
+            xSemaphoreTake(xStatusMutex, portMAX_DELAY);
+            STATUS |= ARMED;
+            xSemaphoreGive(xStatusMutex);
+            ESP_LOGW(TAG_MAIN, "System ARMED.");
             for (uint32_t i = 0; i < 3; i++)
             {
                 gpio_set_level(LED_GPIO, HIGH);
@@ -283,10 +290,12 @@ void app_main(void)
                 vTaskDelay(pdMS_TO_TICKS(100));
             }
         }
-        
-        if (just_disarmed)
+        else if (disarm)
         {
-            ESP_LOGE("MAIN", "System DISARMED. Signaling...");
+            xSemaphoreTake(xStatusMutex, portMAX_DELAY);
+            STATUS &= ~(ARMED);
+            xSemaphoreGive(xStatusMutex);
+            ESP_LOGW(TAG_MAIN, "Disarming system. Signaling...");
             gpio_set_level(LED_GPIO, HIGH);
             gpio_set_level(BUZZER_GPIO, HIGH);
             vTaskDelay(pdMS_TO_TICKS(1000));
