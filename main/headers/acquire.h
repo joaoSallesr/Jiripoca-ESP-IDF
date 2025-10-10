@@ -2,11 +2,16 @@
 #define ACQUIRE_H
 
 #include "common.h"
-//#include "bmp390.h"
+// #include "bmp390.h"
 #include "icm20948.h"
 #include "icm20948_i2c.h"
 
 #define G 9.80665
+
+#define R1 10000.0f // Resistor connected to battery positive terminal
+#define R2 20000.0f // Resistor connected to ground
+
+#define GPS_BAUD_RATE 115200
 
 #define ICM_SCALE_2G 16384.0f
 #define ICM_SCALE_4G 8192.0f
