@@ -12,13 +12,37 @@
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
 #include "sdkconfig.h"
+       
+#include "esp_adc/adc_oneshot.h"      
+#include "esp_adc/adc_cali.h"        
+#include "esp_adc/adc_cali_scheme.h" 
+
+#include "driver/uart.h"
+#include "driver/gpio.h"
+#include "driver/i2c.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
 
-#include "freertos/queue.h"
-#include "freertos/semphr.h"
-
+// ALTIMETER BOARD
+// CONFIG_ALTIMETER_VERSION_ASR3000_V4
+#define BUZZER_GPIO 38
+#define LED_GPIO 15
+#define ALED_GPIO 6
+#define BUTTON_GPIO 0
+#define DROGUE_GPIO 48
+#define MAIN_GPIO 47
+#define RBF_GPIO 4
+#define GPS_RX 21
+#define I2C_SCL 9
+#define I2C_SDA 8
+#define SD_MOSI 11
+#define SD_MISO 13
+#define SD_SCK 12
+#define SD_CS 10
+#define E220_RX 35
+#define E220_TX 36
+#define E220_AUX 37
 
 // Status flags
 #define ARMED (1 << 0)
