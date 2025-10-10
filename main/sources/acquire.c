@@ -2,13 +2,14 @@
 
 #define I2C_MASTER_NUM I2C_NUM_0
 #define I2C_MASTER_FREQ_HZ 100000
+#define SEA_LEVEL_PRESSURE_HPA 1013.25f
+#define ISA_ALTITUDE_FACTOR 44330.0f
+#define ISA_PRESSURE_EXPONENT 0.00019029496f // 1.0f / 5.255f
 
 static const char *TAG_ACQ = "Acquire";
 static const char *TAG_ICM = "ICM20948";
+static const char *TAG_BMP = "BMP390";
 
-static const float SEA_LEVEL_PRESSURE_HPA = 1013.25f;
-static const float ISA_ALTITUDE_FACTOR = 44330.0f;
-static const float ISA_PRESSURE_EXPONENT = 1.0f / 5.255f;
 
 void adc_init(adc_oneshot_unit_handle_t *adc_unit_handle, adc_cali_handle_t *adc_cali_handle) {
     adc_oneshot_unit_init_cfg_t unit_config = {
@@ -216,64 +217,64 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
     vTaskDelay(0);
 }
 
-//void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
-//{
-//    // init device
-//    bmp390_init(i2c0_bus_hdl, &dev_cfg, &dev_hdl);
-//    if (dev_hdl == NULL) {
-//        ESP_LOGE(APP_TAG, "bmp390 handle init failed");
-//        assert(dev_hdl);
-//    }
-//
-//    /* configuration registers */
-//    bmp390_power_control_register_t     power_ctrl_reg;
-//    bmp390_configuration_register_t     config_reg;
-//    bmp390_oversampling_register_t      oversampling_reg;
-//    bmp390_output_data_rate_register_t  output_data_rate_reg;
-//    bmp390_interrupt_control_register_t interrupt_ctrl_reg;
-//
-//    /* attempt to read configuration register */
-//    bmp390_get_configuration_register(dev_hdl, &config_reg);
-//
-//    /* attempt to read oversampling register */
-//    bmp390_get_oversampling_register(dev_hdl, &oversampling_reg);
-//
-//    /* attempt to read to power control register */
-//    bmp390_get_power_control_register(dev_hdl, &power_ctrl_reg);
-//
-//    /* attempt to read to output data rate register */
-//    bmp390_get_output_data_rate_register(dev_hdl, &output_data_rate_reg);
-//
-//    /* attempt to read to interrupt control register */
-//    bmp390_get_interrupt_control_register(dev_hdl, &interrupt_ctrl_reg);
-//
-//
-//    ESP_LOGI(APP_TAG, "Configuration (0x%02x): %s", config_reg.reg,           uint8_to_binary(config_reg.reg));
-//    ESP_LOGI(APP_TAG, "Oversampling  (0x%02x): %s", oversampling_reg.reg,     uint8_to_binary(oversampling_reg.reg));
-//    ESP_LOGI(APP_TAG, "Data Rate     (0x%02x): %s", output_data_rate_reg.reg, uint8_to_binary(output_data_rate_reg.reg));
-//    ESP_LOGI(APP_TAG, "Power Control (0x%02x): %s", power_ctrl_reg.reg,       uint8_to_binary(power_ctrl_reg.reg));
-//    ESP_LOGI(APP_TAG, "Int Control   (0x%02x): %s", interrupt_ctrl_reg.reg,   uint8_to_binary(interrupt_ctrl_reg.reg));
-//
-//    if(interrupt_ctrl_reg.bits.irq_data_ready_enabled)
-//        ESP_LOGE(APP_TAG, "bmp390 irq data ready is enabled");
-//}
-
-void acquire_bmp390(data_t *data, bmp390_handle_t* dev_hdl)
+void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
 {
-    ESP_LOGI(APP_TAG, "######################## BMP390 - START #########################");
+   // init device
+   bmp390_init(i2c0_bus_hdl, &dev_cfg, &dev_hdl);
+   if (dev_hdl == NULL) {
+       ESP_LOGE(TAG_BMP, "bmp390 handle init failed");
+       assert(dev_hdl);
+   }
+
+   /* configuration registers */
+   bmp390_power_control_register_t     power_ctrl_reg;
+   bmp390_configuration_register_t     config_reg;
+   bmp390_oversampling_register_t      oversampling_reg;
+   bmp390_output_data_rate_register_t  output_data_rate_reg;
+   bmp390_interrupt_control_register_t interrupt_ctrl_reg;
+
+   /* attempt to read configuration register */
+   bmp390_get_configuration_register(dev_hdl, &config_reg);
+
+   /* attempt to read oversampling register */
+   bmp390_get_oversampling_register(dev_hdl, &oversampling_reg);
+
+   /* attempt to read to power control register */
+   bmp390_get_power_control_register(dev_hdl, &power_ctrl_reg);
+
+   /* attempt to read to output data rate register */
+   bmp390_get_output_data_rate_register(dev_hdl, &output_data_rate_reg);
+
+   /* attempt to read to interrupt control register */
+   bmp390_get_interrupt_control_register(dev_hdl, &interrupt_ctrl_reg);
+
+
+   ESP_LOGI(TAG_BMP, "Configuration (0x%02x): %s", config_reg.reg,           uint8_to_binary(config_reg.reg));
+   ESP_LOGI(TAG_BMP, "Oversampling  (0x%02x): %s", oversampling_reg.reg,     uint8_to_binary(oversampling_reg.reg));
+   ESP_LOGI(TAG_BMP, "Data Rate     (0x%02x): %s", output_data_rate_reg.reg, uint8_to_binary(output_data_rate_reg.reg));
+   ESP_LOGI(TAG_BMP, "Power Control (0x%02x): %s", power_ctrl_reg.reg,       uint8_to_binary(power_ctrl_reg.reg));
+   ESP_LOGI(TAG_BMP, "Int Control   (0x%02x): %s", interrupt_ctrl_reg.reg,   uint8_to_binary(interrupt_ctrl_reg.reg));
+
+   if(interrupt_ctrl_reg.bits.irq_data_ready_enabled)
+       ESP_LOGE(TAG_BMP, "bmp390 irq data ready is enabled");
+}
+
+void acquire_bmp390(data_t* data, bmp390_handle_t* dev_hdl)
+{
+    ESP_LOGI(TAG_BMP, "######################## BMP390 - START #########################");
 
     // sensor readings
     esp_err_t result = bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure);
     
     if (result != ESP_OK)
     {
-        ESP_LOGE(APP_TAG, "bmp390 device read failed (%s)", esp_err_to_name(result));
+        ESP_LOGE(TAG_BMP, "bmp390 device read failed (%s)", esp_err_to_name(result));
     }
     else 
     {
         data->pressure = data->pressure / 100.0f;
-        ESP_LOGI(APP_TAG, "air temperature:      %.2f °C", data->temperature);
-        ESP_LOGI(APP_TAG, "barometric pressure: %.2f hPa", data->pressure);
+        ESP_LOGI(TAG_BMP, "air temperature:      %.2f °C", data->temperature);
+        ESP_LOGI(TAG_BMP, "barometric pressure: %.2f hPa", data->pressure);
     }
 
     float temp_altitude = 0;
@@ -284,7 +285,7 @@ void acquire_bmp390(data_t *data, bmp390_handle_t* dev_hdl)
         data->max_altitude = temp_altitude;
     data->bmp_altitude = temp_altitude;
     
-    ESP_LOGI(APP_TAG, "######################## BMP390 - END ###########################");
+    ESP_LOGI(TAG_BMP, "######################## BMP390 - END ###########################");
 }
 
 // status_checks checks if the rocket is flying, motor is cutoff, or landed
@@ -368,9 +369,9 @@ void task_acquire(void *pvParameters)
     // BMP390
 
     // init bmp390
-    // bmp390_config_t dev_cfg = I2C_BMP390_CONFIG_DEFAULT;
-    // bmp390_handle_t dev_hdl;
-    // init_bmp390(&dev_cfg, &dev_hdl);
+    bmp390_config_t dev_cfg = I2C_BMP390_CONFIG_DEFAULT;
+    bmp390_handle_t dev_hdl;
+    init_bmp390(&dev_cfg, &dev_hdl);
 
     xTaskCreate(task_gps, "GPS", configMINIMAL_STACK_SIZE * 4, &data, 6, NULL);
 
