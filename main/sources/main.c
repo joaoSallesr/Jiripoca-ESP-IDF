@@ -13,7 +13,6 @@ void task_deploy(void *pvParameters)
 {
 
     gpio_set_direction(DROGUE_GPIO, GPIO_MODE_OUTPUT);
-
     gpio_set_direction(MAIN_GPIO, GPIO_MODE_OUTPUT);
 
     float current_altitude = 0;
@@ -25,21 +24,23 @@ void task_deploy(void *pvParameters)
 
     while (true)
     {
-        /*// Manual Deploy Test
-        if (gpio_get_level(BUTTON_GPIO) == LOW)
-        {
-            gpio_set_level(MAIN_GPIO, HIGH);
-            gpio_set_level(DROGUE_GPIO, HIGH);
-        }
-        else
-        {
-            gpio_set_level(MAIN_GPIO, LOW);
-            gpio_set_level(DROGUE_GPIO, LOW);
-        }*/
+        bool acionar_drogue = false;
+        bool acionar_main = false;
 
         // Get current altitude
         xQueueReceive(xAltQueue, &current_altitude, portMAX_DELAY);
 
+        // Check the disarm and see if it should continue
+        xSemaphoreTake(xStatusMutex, portMAX_DELAY);
+        if (!(STATUS & ARMED))
+        {
+            // Terminates the task if the system is not armed
+            xSemaphoreGive(xStatusMutex);
+            ESP_LOGE(TAG_DEPLOY, "Disarm command received. Terminating deploy task.");
+            vTaskDelete(NULL);
+        }
+        xSemaphoreGive(xStatusMutex);
+        
         // Update max altitude
         if (current_altitude > max_altitude)
         {
@@ -47,49 +48,80 @@ void task_deploy(void *pvParameters)
         }
 
         xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-        if (!(STATUS & DROGUE_DEPLOYED)) // If drogue not deployed
-        {
-            if (current_altitude < max_altitude - CONFIG_DROGUE_THRESHOLD) // If altitude is DROGUE_THRESHOLD below max altitude
-            {
-                STATUS |= DROGUE_DEPLOYED;
-                xSemaphoreGive(xStatusMutex);
-                gpio_set_level(DROGUE_GPIO, HIGH);
-                ESP_LOGW(TAG_DEPLOY, "Drogue deployed");
-                vTaskDelay(pdMS_TO_TICKS(500));
-                gpio_set_level(DROGUE_GPIO, LOW);
-            }
-            else
-                xSemaphoreGive(xStatusMutex);
-        }
-        else if (!(STATUS & MAIN_DEPLOYED)) // If drogue deployed but main not deployed
-        {
-            if (current_altitude < start_altitude + CONFIG_MAIN_ALTITUDE) // If altitude is MAIN_ALTITUDE above start altitude
-            {
-                STATUS |= MAIN_DEPLOYED;
-                xSemaphoreGive(xStatusMutex);
 
-                gpio_set_level(MAIN_GPIO, HIGH);
-                ESP_LOGW(TAG_DEPLOY, "Main deployed");
-                vTaskDelay(pdMS_TO_TICKS(500));
-                gpio_set_level(MAIN_GPIO, LOW);
-
-                // Delete task
-                vTaskDelete(NULL);
-            }
-            else
-                xSemaphoreGive(xStatusMutex);
+        if (!(STATUS & DROGUE_DEPLOYED) && (current_altitude < max_altitude - CONFIG_DROGUE_THRESHOLD))
+        {
+            STATUS |= DROGUE_DEPLOYED;
+            acionar_drogue = true;
         }
-        else
-            xSemaphoreGive(xStatusMutex);
+        else if (!(STATUS & MAIN_DEPLOYED) && (current_altitude < start_altitude + CONFIG_MAIN_ALTITUDE))
+        {
+            STATUS |= MAIN_DEPLOYED;
+            acionar_main = true;
+        }
+
+        xSemaphoreGive(xStatusMutex);
+
+        if (acionar_drogue)
+        {
+            gpio_set_level(DROGUE_GPIO, HIGH);
+            ESP_LOGW(TAG_DEPLOY, "Drogue deployed");
+            vTaskDelay(pdMS_TO_TICKS(500));
+            gpio_set_level(DROGUE_GPIO, LOW);
+        }
+
+        if (acionar_main)
+        {
+            gpio_set_level(MAIN_GPIO, HIGH);
+            ESP_LOGW(TAG_DEPLOY, "Main deployed");
+            vTaskDelay(pdMS_TO_TICKS(500));
+            gpio_set_level(MAIN_GPIO, LOW);
+
+            // Delete task
+            vTaskDelete(NULL);
+        }
     }
 }
 
 // task_buzzer_led blinks LED and beeps buzzer to indicate status
 void task_buzzer_led(void *pvParameters)
 {
+    while (true)
+    {
+        vTaskDelay(pdMS_TO_TICKS(1000)); 
+                                         
+        // Use local copy of STATUS because of delays
+        xSemaphoreTake(xStatusMutex, portMAX_DELAY);
+        int32_t status_local = STATUS;
+        xSemaphoreGive(xStatusMutex);
+
+        // If LANDED, blink LED every second
+        if (status_local & LANDED)
+        {
+            while(true)
+            {
+                gpio_set_level(LED_GPIO, HIGH);
+                gpio_set_level(BUZZER_GPIO, HIGH);
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                gpio_set_level(LED_GPIO, LOW);
+                gpio_set_level(BUZZER_GPIO, LOW);
+                vTaskDelay(pdMS_TO_TICKS(1000));
+            }
+        }
+    }
+}
+
+static void setup_peripherals(void)
+{
+    // GPIO Initialization
+    gpio_set_direction(RBF_GPIO, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(RBF_GPIO, GPIO_PULLUP_ONLY);
+
+    gpio_set_direction(BUTTON_GPIO, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(BUTTON_GPIO, GPIO_PULLUP_ONLY);
+
     gpio_reset_pin(BUZZER_GPIO);
     gpio_set_direction(BUZZER_GPIO, GPIO_MODE_OUTPUT);
-
     gpio_reset_pin(LED_GPIO);
     gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
 
@@ -104,54 +136,10 @@ void task_buzzer_led(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(50));
     }
     ESP_LOGI("Buzzer LED", "Initialized");
-
-    while (true)
-    {
-        // Use local copy of STATUS because of delays
-        xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-        int32_t status_local = STATUS;
-        xSemaphoreGive(xStatusMutex);
-
-        // If ARMED, blink LED and beep buzzer three times
-        if (status_local & ARMED)
-        {
-            static uint32_t i = 0;
-            while (i++ < 3)
-            {
-                gpio_set_level(LED_GPIO, HIGH);
-                gpio_set_level(BUZZER_GPIO, HIGH);
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                gpio_set_level(LED_GPIO, LOW);
-                gpio_set_level(BUZZER_GPIO, LOW);
-                vTaskDelay(pdMS_TO_TICKS(100));
-            }
-        }
-        // If LANDED, blink LED every second
-        if (status_local & LANDED)
-        {
-            gpio_set_level(LED_GPIO, HIGH);
-            gpio_set_level(BUZZER_GPIO, HIGH);
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            gpio_set_level(LED_GPIO, LOW);
-            gpio_set_level(BUZZER_GPIO, LOW);
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
 }
 
-void app_main(void)
+static bool check_for_format_mode(void)
 {
-    // GPIO Initialization
-
-    gpio_set_direction(RBF_GPIO, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(RBF_GPIO, GPIO_PULLUP_ONLY);
-
-    gpio_set_direction(BUTTON_GPIO, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(BUTTON_GPIO, GPIO_PULLUP_ONLY);
-
-    // Enter format mode if button is pressed for 5 seconds
-    uint32_t format = pdFALSE;
     if (gpio_get_level(BUTTON_GPIO) == LOW)
     {
         uint64_t time = esp_timer_get_time();
@@ -160,20 +148,16 @@ void app_main(void)
             if (esp_timer_get_time() - time > 5000000)
             {
                 ESP_LOGW("RESET", "Button pressed for 5 seconds. Formatting...");
-                format = pdTRUE;
-                break;
+                return true;
             }
             vTaskDelay(10);
         }
     }
+    return false;
+}
 
-    // Create Mutexes
-    xStatusMutex = xSemaphoreCreateMutex();
-
-    // Create Queues
-    xAltQueue = xQueueCreate(2, sizeof(float));
-    xLittleFSQueue = xQueueCreate(2, sizeof(data_t));
-
+static void manage_nvs_counters(bool format_mode, file_counter_t *sd_counter, file_counter_t *lfs_counter)
+{
     // Initialize NVS to store file counters
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -195,16 +179,12 @@ void app_main(void)
     nvs_get_i32(nvs_handle, "lfs_counter", &lfs_num);
 
     // Increment file counters
-    if (sd_num < CONFIG_MAX_SD_FILES)
-        sd_num++;
-    else
-        sd_num = 0;
-    if (lfs_num < CONFIG_MAX_LFS_FILES)
-        lfs_num++;
-    else
-        lfs_num = 0;
+    if (sd_num < CONFIG_MAX_SD_FILES) sd_num++;
+    else sd_num = 0;
+    if (lfs_num < CONFIG_MAX_LFS_FILES) lfs_num++;
+    else lfs_num = 0;
 
-    if (format == pdTRUE)
+    if (format_mode)
     {
         sd_num = 0;
         lfs_num = 0;
@@ -214,26 +194,36 @@ void app_main(void)
     nvs_set_i32(nvs_handle, "sd_counter", sd_num);
     nvs_set_i32(nvs_handle, "lfs_counter", lfs_num);
     nvs_commit(nvs_handle);
-
-    // Close NVS
     nvs_close(nvs_handle);
 
-    // Create file counter structs for tasks
-    file_counter_t counter_sd = {
-        .file_num = sd_num,
-        .format = format
-    };
-    file_counter_t counter_lfs = {
-        .file_num = lfs_num,
-        .format = format
-    };
+    // Populate the counter structs to be used by tasks
+    sd_counter->file_num = sd_num;
+    sd_counter->format = format_mode;
+    lfs_counter->file_num = lfs_num;
+    lfs_counter->format = format_mode;
+}
+
+
+void app_main(void)
+{
+    setup_peripherals();
+    
+    bool format_mode = check_for_format_mode();
+
+    // Create Mutexes
+    xStatusMutex = xSemaphoreCreateMutex();
+    // Create Queues
+    xAltQueue = xQueueCreate(2, sizeof(float));
+    xLittleFSQueue = xQueueCreate(2, sizeof(data_t));
+
+    file_counter_t counter_sd, counter_lfs;
+    manage_nvs_counters(format_mode, &counter_sd, &counter_lfs);
 
     // If format is true, format SD and LittleFS, then restart
-    if (format == pdTRUE)
+    if (format_mode)
     {
         xTaskCreate(task_sd, "SD", configMINIMAL_STACK_SIZE * 8, &counter_sd, 5, NULL);
         xTaskCreate(task_littlefs, "LittleFS", configMINIMAL_STACK_SIZE * 8, &counter_lfs, 5, NULL);
-
         vTaskDelay(pdMS_TO_TICKS(30000));
         esp_restart();
     }
@@ -254,6 +244,9 @@ void app_main(void)
 
     while (true)
     {
+        bool just_armed = false;
+        bool just_disarmed = false;
+
         // Logic for arming parachute deployment
         xSemaphoreTake(xStatusMutex, portMAX_DELAY);
         if (!(STATUS & ARMED)) // If not armed
@@ -262,10 +255,45 @@ void app_main(void)
             {
                 xTaskCreate(task_deploy, "Deploy", configMINIMAL_STACK_SIZE * 2, NULL, 5, NULL); // Start deploy task
                 STATUS |= ARMED;                                                                 // Set ARMED
+                just_armed = true;
+            }
+        }
+
+        else // If already armed, check disarm condition
+        {
+            
+            if (!(STATUS & FLYING) && (gpio_get_level(RBF_GPIO) == HIGH))
+            {
+                STATUS &= (~ARMED);
+                just_disarmed = true;
             }
         }
         xSemaphoreGive(xStatusMutex);
 
+        if (just_armed)
+        {
+            ESP_LOGW("MAIN", "System ARMED. Signaling...");
+            for (uint32_t i = 0; i < 3; i++)
+            {
+                gpio_set_level(LED_GPIO, HIGH);
+                gpio_set_level(BUZZER_GPIO, HIGH);
+                vTaskDelay(pdMS_TO_TICKS(100));
+                gpio_set_level(LED_GPIO, LOW);
+                gpio_set_level(BUZZER_GPIO, LOW);
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+        }
+        
+        if (just_disarmed)
+        {
+            ESP_LOGE("MAIN", "System DISARMED. Signaling...");
+            gpio_set_level(LED_GPIO, HIGH);
+            gpio_set_level(BUZZER_GPIO, HIGH);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            gpio_set_level(LED_GPIO, LOW);
+            gpio_set_level(BUZZER_GPIO, LOW);
+        }
+        
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

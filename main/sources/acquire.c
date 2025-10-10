@@ -6,6 +6,10 @@
 static const char *TAG_ACQ = "Acquire";
 static const char *TAG_ICM = "ICM20948";
 
+static const float SEA_LEVEL_PRESSURE_HPA = 1013.25f;
+static const float ISA_ALTITUDE_FACTOR = 44330.0f;
+static const float ISA_PRESSURE_EXPONENT = 1.0f / 5.255f;
+
 void adc_init(adc_oneshot_unit_handle_t *adc_unit_handle, adc_cali_handle_t *adc_cali_handle) {
     adc_oneshot_unit_init_cfg_t unit_config = {
         .unit_id = ADC_UNIT_1,
@@ -254,32 +258,34 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
 //        ESP_LOGE(APP_TAG, "bmp390 irq data ready is enabled");
 //}
 
-// void acquire_bmp390(data_t *data, bmp390_handle_t* dev_hdl)
-// {
-//     ESP_LOGI(APP_TAG, "######################## BMP390 - START #########################");
-//         //
-        
-//         // sensor readings
-//         if (bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure); != ESP_OK)
-//             ESP_LOGE(APP_TAG, "bmp390 device read failed (%s)", esp_err_to_name(result));
-//         else {
-//             pressure = pressure / 100;
-//             ESP_LOGI(APP_TAG, "air temperature:     %.2f °C", temperature);
-//             ESP_LOGI(APP_TAG, "barometric pressure: %.2f hPa", pressure);
-//         }
+void acquire_bmp390(data_t *data, bmp390_handle_t* dev_hdl)
+{
+    ESP_LOGI(APP_TAG, "######################## BMP390 - START #########################");
 
-//         // necessario revisar
-//         float temp_altitude = 0;
-//         BMP280 altitude calculation (barometric formula)
-//         temp_altitude = 44330 * (1 - powf(data->pressure / 101325, 1 / 5.255));
+    // sensor readings
+    esp_err_t result = bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure);
+    
+    if (result != ESP_OK)
+    {
+        ESP_LOGE(APP_TAG, "bmp390 device read failed (%s)", esp_err_to_name(result));
+    }
+    else 
+    {
+        data->pressure = data->pressure / 100.0f;
+        ESP_LOGI(APP_TAG, "air temperature:      %.2f °C", data->temperature);
+        ESP_LOGI(APP_TAG, "barometric pressure: %.2f hPa", data->pressure);
+    }
 
-//         if (temp_altitude > data->max_altitude)
-//             data->max_altitude = temp_altitude;
-//         data->bmp_altitude = temp_altitude;
-        
-//         //
-//     ESP_LOGI(APP_TAG, "######################## BMP390 - END ###########################");
-// }
+    float temp_altitude = 0;
+    // BMP390 altitude calculation (barometric formula)
+    temp_altitude = ISA_ALTITUDE_FACTOR * (1.0f - powf(data->pressure / SEA_LEVEL_PRESSURE_HPA, ISA_PRESSURE_EXPONENT));
+
+    if (temp_altitude > data->max_altitude)
+        data->max_altitude = temp_altitude;
+    data->bmp_altitude = temp_altitude;
+    
+    ESP_LOGI(APP_TAG, "######################## BMP390 - END ###########################");
+}
 
 // status_checks checks if the rocket is flying, motor is cutoff, or landed
 void status_checks(data_t *data)
@@ -388,7 +394,7 @@ void task_acquire(void *pvParameters)
         acquire_icm20948(&data, &icm, &agmt);
 
         // BMP390
-        // acquire_bmp390(&data, &dev_bmp);
+        acquire_bmp390(&data, &dev_hdl);
 
         status_checks(&data);
 

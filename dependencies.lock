@@ -74,6 +74,6 @@ direct_dependencies:
 - igrr/libnmea
 - joltwallet/littlefs
 - k0i05/esp_bmp390
-manifest_hash: 166931957260dd3ccdef086b766c8f8e506fe60fcb74e936b0aaf2930c038ac1
+manifest_hash: b8faf181b4db7ea91ce8b02259d2c4033fb2dc0b93222cb27198674bbbce21c7
 target: esp32s3
 version: 2.0.0
