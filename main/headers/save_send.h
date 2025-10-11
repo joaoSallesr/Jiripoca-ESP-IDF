@@ -22,3 +22,4 @@
 
 void task_sd(void *pvParameters);
 void task_littlefs(void *pvParameters);
+void task_lora(void *pvParameters);

@@ -252,6 +252,7 @@ void app_main(void)
     xTaskCreate(task_sd, "SD", configMINIMAL_STACK_SIZE * 4, &counter_sd, 5, NULL);
     xTaskCreate(task_littlefs, "LittleFS", configMINIMAL_STACK_SIZE * 4, &counter_lfs, 5, NULL);
     xTaskCreate(task_buzzer_led, "Buzzer LED", configMINIMAL_STACK_SIZE * 2, NULL, 3, NULL);
+    xTaskCreate(task_lora, "LoRa", configMINIMAL_STACK_SIZE * 4, NULL, 4, NULL);
 
     while (true)
     {
