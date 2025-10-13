@@ -26,7 +26,7 @@ void task_sd(void *pvParameters)
 
     // Settings for mounting FAT filesystem
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = CONFIG_SD_FORMAT_IF_MOUNT_FAILED, // Test changes later (!!!)
+        .format_if_mount_failed = CONFIG_SD_FORMAT_IF_MOUNT_FAILED, // TESTAR 00 (simplificação do FORMAT_IF_MOUNT_FAILED)
         .max_files = SD_MAX_FILES,
         .allocation_unit_size = SD_UNIT_SIZE,
     };
@@ -122,7 +122,7 @@ void task_sd(void *pvParameters)
         }
         fwrite(buffer, sizeof(data_t), SD_BUFFER_COUNT, f);
         
-        fflush(f);                                              // TESTAR 02
+        fflush(f);                                              // TESTAR 02 (necessidade do flush e se resolve o problema)
         fclose(f);
 
         ESP_LOGI(TAG_SD, "Data written to SD card");
@@ -227,7 +227,7 @@ void task_littlefs(void *pvParameters)
         // Read data from queue
         for (int i = 0; i < FS_BUFFER_COUNT; ++i)
         {
-            xQueueReceive(xLittleFSQueue, &buffer[i], portMAX_DELAY);   // TESTAR 03 (mesmo caso do SD)
+            xQueueReceive(xLittleFSQueue, &buffer[i], portMAX_DELAY);   // TESTAR 03 (mesmo caso do SD 01)
             //xQueueReceive(xLittleFSQueue, &data, portMAX_DELAY);      // 03
             //buffer[i] = data;                                         // 03
         }
@@ -253,6 +253,7 @@ void task_littlefs(void *pvParameters)
             if (oldest_file_num == counterFS.file_num) // If oldest file is current file
             {
                 ESP_LOGE(TAG_LITTLEFS, "No more disk space, unmounting LittleFS");
+
                 esp_vfs_littlefs_unregister(littlefs_config.partition_label);
                 ESP_LOGI(TAG_LITTLEFS, "LittleFS unmounted");
 
@@ -273,11 +274,11 @@ void task_littlefs(void *pvParameters)
             
         fwrite(buffer, sizeof(data_t), FS_BUFFER_COUNT, f);
 
-        fflush(f);                                                          // TESTAR 04
+        fflush(f);                                                          // TESTAR 04 (mesmo caso do SD 02)
         fclose(f);                             
 
         // Update used space tracker
-        esp_littlefs_info(littlefs_config.partition_label, &total, &used);  // TESTAR 05
+        esp_littlefs_info(littlefs_config.partition_label, &total, &used);  // TESTAR 05 (se é melhor que o used+=)
         //used += sizeof(buffer);  
 
         ESP_LOGI(TAG_LITTLEFS, "Data written to LittleFS.");
