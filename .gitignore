@@ -13,6 +13,8 @@ managed_components/
 .gitignore
 .git/
 
+.idea/
+
 .clangd
 sdkconfig
 sdkconfig.old

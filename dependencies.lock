@@ -9,17 +9,10 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 0.1.0
-  dernasherbrezon/sx127x:
-    component_hash: 98fa3fd80e015566ff47ecb4bf5d0d096fb25958f2345e1d440adb1ce8351349
-    dependencies: []
-    source:
-      registry_url: https://components.espressif.com/
-      type: service
-    version: 3.1.2
   idf:
     source:
       type: idf
-    version: 5.5.0
+    version: 5.5.1
   igrr/libnmea:
     component_hash: 25ea527f892761c4311831ecadfa0cb1a3a323501c43b4a8263639beec01ae57
     dependencies:
@@ -69,11 +62,10 @@ dependencies:
     version: 1.2.7
 direct_dependencies:
 - cybergear-robotics/icm20948
-- dernasherbrezon/sx127x
 - idf
 - igrr/libnmea
 - joltwallet/littlefs
 - k0i05/esp_bmp390
-manifest_hash: b8faf181b4db7ea91ce8b02259d2c4033fb2dc0b93222cb27198674bbbce21c7
+manifest_hash: 34c94d3a855405886110dc1e45afd6a74ffedfa9a25635f9e5f4c5d5824eda5e
 target: esp32s3
 version: 2.0.0
