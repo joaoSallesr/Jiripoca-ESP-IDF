@@ -64,7 +64,7 @@ void task_deploy(void *pvParameters)
         if (current_altitude > max_altitude) max_altitude = current_altitude;
 
         acionar_drogue = !(local_status & DROGUE_DEPLOYED) && (current_altitude < max_altitude - CONFIG_DROGUE_THRESHOLD);
-        acionar_main = acionar_drogue && !(local_status & MAIN_DEPLOYED) && (current_altitude < start_altitude + CONFIG_MAIN_ALTITUDE);
+        acionar_main = (local_status & DROGUE_DEPLOYED) && !(local_status & MAIN_DEPLOYED) && (current_altitude < start_altitude + CONFIG_MAIN_ALTITUDE);
 
         if (acionar_drogue)
         {
@@ -78,7 +78,7 @@ void task_deploy(void *pvParameters)
             xSemaphoreGive(xStatusMutex);
         }
 
-        if (acionar_main)
+        else if (acionar_main)
         {
             gpio_set_level(MAIN_GPIO, HIGH);
             ESP_LOGW(TAG_DEPLOY, "Main deployed");
@@ -269,9 +269,9 @@ void app_main(void)
         xSemaphoreGive(xStatusMutex);
         
         // If not armed, not in safe mode and RBF is off, arm the system
-        arm = !(local_status & ARMED) && !(local_status & SAFE_MODE) && gpio_get_level(RBF_GPIO) == LOW;
+        arm = !(local_status & ARMED) && !(local_status & SAFE_MODE) && gpio_get_level(RBF_GPIO) == HIGH;
         // If already armed, check disarm condition
-        disarm = !arm && !(local_status & FLYING) && (gpio_get_level(RBF_GPIO) == HIGH);
+        disarm = !arm && !(local_status & FLYING) && (gpio_get_level(RBF_GPIO) == LOW);
 
         if (arm)
         {
@@ -279,6 +279,7 @@ void app_main(void)
             xSemaphoreTake(xStatusMutex, portMAX_DELAY);
             STATUS |= ARMED;
             xSemaphoreGive(xStatusMutex);
+            arm = false;
             ESP_LOGW(TAG_MAIN, "System ARMED.");
             for (uint32_t i = 0; i < 3; i++)
             {
@@ -295,6 +296,7 @@ void app_main(void)
             xSemaphoreTake(xStatusMutex, portMAX_DELAY);
             STATUS &= ~(ARMED);
             xSemaphoreGive(xStatusMutex);
+            disarm = false;
             ESP_LOGW(TAG_MAIN, "Disarming system. Signaling...");
             gpio_set_level(LED_GPIO, HIGH);
             gpio_set_level(BUZZER_GPIO, HIGH);
