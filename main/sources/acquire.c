@@ -213,6 +213,9 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
     data->rotation_x = agmt->gyr.axes.x/ICM_SCALE_2000DPS;
     data->rotation_y = agmt->gyr.axes.y/ICM_SCALE_2000DPS;
     data->rotation_z = agmt->gyr.axes.z/ICM_SCALE_2000DPS;
+    data->magnet_x = agmt->mag.axes.x/ICM_SCALE_4900μT;
+    data->magnet_y = agmt->mag.axes.y/ICM_SCALE_4900μT;
+    data->magnet_z = agmt->mag.axes.z/ICM_SCALE_4900μT;
 
     vTaskDelay(0);
 }
