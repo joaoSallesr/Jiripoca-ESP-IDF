@@ -5,6 +5,16 @@ managed_components/
 *.DS_Store
 */.cache
 
+.vscode/
 .vscode/*
 !.vscode/tasks.json
 !.vscode/extensions.json
+
+.gitignore
+.git/
+
+.idea/
+
+.clangd
+sdkconfig
+sdkconfig.old

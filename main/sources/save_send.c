@@ -8,54 +8,52 @@ static const char *TAG_LORA = "LoRa";
 // task_sd reads data from queue and writes it to SD card
 void task_sd(void *pvParameters)
 {
-    file_counter_t counter = *(file_counter_t *)pvParameters;
-    esp_err_t ret;
-
-    // Options for mounting the filesystem.
-    // If format_if_mount_failed is set to true, SD card will be partitioned and
-    // formatted in case when mounting fails.
-    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-#ifdef CONFIG_SD_FORMAT_IF_MOUNT_FAILED
-        .format_if_mount_failed = true,
-#else
-        .format_if_mount_failed = false,
-#endif // EXAMPLE_FORMAT_IF_MOUNT_FAILED
-        .max_files = 5,
-        .allocation_unit_size = 16 * 1024};
+    esp_err_t errSD;
     sdmmc_card_t *card;
-    const char* mount_point = "/sdcard";
-    ESP_LOGI(TAG_SD, "Initializing SD card");
-    // Use settings defined above to initialize SD card and mount FAT filesystem.
+    file_counter_t counter = *(file_counter_t *)pvParameters;
 
-    ESP_LOGI(TAG_SD, "Using SPI peripheral");
-
-    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-
-    spi_bus_config_t bus_cfg = {
+    // Settings for initializing SD card
+    spi_bus_config_t bus_config = {
         .mosi_io_num = SD_MOSI,
         .miso_io_num = SD_MISO,
         .sclk_io_num = SD_SCK,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = 4000,
+        .max_transfer_sz = SD_TRANSF_SIZE,
     };
-    ret = spi_bus_initialize(host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG_SD, "Failed to initialize bus.");
-        return;
-    }
 
+    // Settings for mounting FAT filesystem
+    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+        .format_if_mount_failed = CONFIG_SD_FORMAT_IF_MOUNT_FAILED, // Test changes later (!!!)
+        .max_files = SD_MAX_FILES,
+        .allocation_unit_size = SD_UNIT_SIZE,
+    };
+    // Set CONFIG_SD_FORMAT_IF_MOUNT_FAILED to TRUE or FALSE
+    // When format_if_mount_failed is set to true, SD card will be partitioned and formatted
+
+    ESP_LOGI(TAG_SD, "Initializing SD card");
+
+    // SPI initializer
+    ESP_LOGI(TAG_SD, "Using SPI peripheral");
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
     slot_config.gpio_cs = SD_CS;
     slot_config.host_id = host.slot;
 
-    ESP_LOGI(TAG_SD, "Mounting filesystem");
-    ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &card);
-
-    if (ret != ESP_OK)
+    errSD = spi_bus_initialize(host.slot, &bus_config, SDSPI_DEFAULT_DMA);
+    if (errSD != ESP_OK)
     {
-        if (ret == ESP_FAIL)
+        ESP_LOGE(TAG_SD, "Failed to initialize SPI bus.");
+        return;
+    }
+    ESP_LOGI(TAG_SD, "SPI bus initialized");
+
+    // Mount filesystem
+    ESP_LOGI(TAG_SD, "Mounting filesystem");
+    errSD = esp_vfs_fat_sdspi_mount(SD_MOUNT, &host, &slot_config, &mount_config, &card);
+    if (errSD != ESP_OK)
+    {
+        if (errSD == ESP_FAIL)
         {
             ESP_LOGE(TAG_SD, "Failed to mount filesystem. "
                              "If you want the card to be formatted, set the CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.");
@@ -63,7 +61,7 @@ void task_sd(void *pvParameters)
         else
         {
             ESP_LOGE(TAG_SD, "Failed to initialize the card (%s). ",
-                     esp_err_to_name(ret));
+                     esp_err_to_name(errSD));
         }
         return;
     }
@@ -72,14 +70,14 @@ void task_sd(void *pvParameters)
     // Format mode
     if (counter.format == pdTRUE)
     {
-        ret = esp_vfs_fat_sdcard_format(mount_point, card);
-        if (ret != ESP_OK)
+        errSD = esp_vfs_fat_sdcard_format(SD_MOUNT, card);
+        if (errSD != ESP_OK)
         {
-            ESP_LOGE(TAG_SD, "Failed to format FATFS (%s)", esp_err_to_name(ret));
+            ESP_LOGE(TAG_SD, "Failed to format FATFS (%s)", esp_err_to_name(errSD));
         }
         else
             ESP_LOGI(TAG_SD, "Format Successful");
-        esp_vfs_fat_sdcard_unmount(mount_point, card);
+        esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
         ESP_LOGI(TAG_SD, "Card unmounted");
         vTaskDelete(NULL);
     }
@@ -89,36 +87,43 @@ void task_sd(void *pvParameters)
 
     // Create log file
     char log_name[32];
-    snprintf(log_name, 32, "%s/flight%ld.bin", mount_point, counter.file_num);
+    snprintf(log_name, 32, "%s/flight%ld.bin", SD_MOUNT, counter.file_num);
     ESP_LOGI(TAG_SD, "Creating file %s", log_name);
+
     FILE *f = fopen(log_name, "w");
     if (f == NULL)
     {
         ESP_LOGE(TAG_SD, "Failed to open file for writing");
+        esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
+        ESP_LOGI(TAG_SD, "Card unmounted");
+        return;
     }
     fclose(f);
 
     while (true)
     {
         data_t data;
-        data_t buffer[CONFIG_SD_BUFFER_SIZE / sizeof(data_t)];
+        data_t buffer[SD_BUFFER_COUNT]; 
 
         // Read data from queue
-        /*verificar se essa eh a forma ideal*/
-        for (int i = 0; i < CONFIG_SD_BUFFER_SIZE / sizeof(data_t); ++i)
+        for (int i = 0; i < SD_BUFFER_COUNT; ++i)
         {
-            xQueueReceive(xSDQueue, &data, portMAX_DELAY);
-            buffer[i] = data;
+            xQueueReceive(xSDQueue, &buffer[i], portMAX_DELAY); // TESTAR
+            //xQueueReceive(xSDQueue, &data, portMAX_DELAY);
+            //buffer[i] = data;
         }
 
         // Write buffer to file
         f = fopen(log_name, "a");
-        if (f == NULL)
+        if (f == NULL) //rever esse f == NULL
         {
             ESP_LOGE(TAG_SD, "Failed to open file for writing");
         }
-        fwrite(buffer, sizeof(data_t), CONFIG_SD_BUFFER_SIZE / sizeof(data_t), f);
+        fwrite(buffer, sizeof(data_t), SD_BUFFER_COUNT, f);
+        
+        fflush(f); // TESTAR
         fclose(f);
+
         ESP_LOGI(TAG_SD, "Data written to SD card");
 
         // Check if landed
@@ -127,7 +132,7 @@ void task_sd(void *pvParameters)
         {
             xSemaphoreGive(xStatusMutex);
             ESP_LOGW(TAG_SD, "Landed, unmounting SD card");
-            esp_vfs_fat_sdcard_unmount(mount_point, card);
+            esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
             ESP_LOGI(TAG_SD, "Card unmounted");
             vTaskDelete(NULL); // Delete task
         }
@@ -152,23 +157,23 @@ void task_littlefs(void *pvParameters)
         .dont_mount = false,
     };
 
-    esp_err_t ret = esp_vfs_littlefs_register(&conf);
+    esp_err_t errFS = esp_vfs_littlefs_register(&conf);
 
-    if (ret != ESP_OK)
+    if (errFS != ESP_OK)
     {
-        if (ret == ESP_FAIL)
+        if (errFS == ESP_FAIL)
             ESP_LOGE(TAG_LITTLEFS, "Failed to mount or format filesystem");
-        else if (ret == ESP_ERR_NOT_FOUND)
+        else if (errFS == ESP_ERR_NOT_FOUND)
             ESP_LOGE(TAG_LITTLEFS, "Failed to find LittleFS partition");
         else
-            ESP_LOGE(TAG_LITTLEFS, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
+            ESP_LOGE(TAG_LITTLEFS, "Failed to initialize LittleFS (%s)", esp_err_to_name(errFS));
     }
 
     size_t total = 0, used = 0;
-    ret = esp_littlefs_info(conf.partition_label, &total, &used);
-    if (ret != ESP_OK)
+    errFS = esp_littlefs_info(conf.partition_label, &total, &used);
+    if (errFS != ESP_OK)
     {
-        ESP_LOGE(TAG_LITTLEFS, "Failed to get LittleFS partition information (%s)", esp_err_to_name(ret));
+        ESP_LOGE(TAG_LITTLEFS, "Failed to get LittleFS partition information (%s)", esp_err_to_name(errFS));
     }
     else
     {
@@ -178,10 +183,10 @@ void task_littlefs(void *pvParameters)
     // Format mode
     if (counter.format == pdTRUE)
     {
-        ret = esp_littlefs_format(conf.partition_label);
-        if (ret != ESP_OK)
+        errFS = esp_littlefs_format(conf.partition_label);
+        if (errFS != ESP_OK)
         {
-            ESP_LOGE(TAG_LITTLEFS, "Failed to format LittleFS (%s)", esp_err_to_name(ret));
+            ESP_LOGE(TAG_LITTLEFS, "Failed to format LittleFS (%s)", esp_err_to_name(errFS));
         }
         else
             ESP_LOGI(TAG_LITTLEFS, "Format Successful");

@@ -22,11 +22,7 @@
 #include "driver/i2c.h"
 
 #include "esp_log.h"
-#include "esp_err.h" 
 #include "esp_timer.h"
-
-#include "freertos/queue.h"
-#include "freertos/semphr.h"
 
 // ALTIMETER BOARD
 // CONFIG_ALTIMETER_VERSION_ASR3000_V4
