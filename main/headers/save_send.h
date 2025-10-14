@@ -14,6 +14,7 @@
 #include "driver/uart.h"
 
 #define MAX_USED 0.8 // Maximum percentage of flash to be used by littlefs
+#define FILENAME_LENGTH 32
 #define E220_BAUD_RATE 115200
 #define SD_MOUNT "/sdcard"
 #define SD_TRANSF_SIZE 4000
