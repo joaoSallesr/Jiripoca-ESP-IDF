@@ -15,6 +15,9 @@
 
 #define LORA_BAUD_RATE 115200
 #define LORA_UART_NUM UART_NUM_2
+#define LORA_TX_RETRIES 2
+#define CONFIG_E220_TX_DONE_TIMEOUT_MS 1000 
+#define CONFIG_E220_AUX_TIMEOUT_MS 3000 
 
 #define MAX_USED 0.8 // Maximum percentage of flash to be used by littlefs
 #define E220_BAUD_RATE 115200

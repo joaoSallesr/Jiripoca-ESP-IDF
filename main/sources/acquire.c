@@ -350,12 +350,8 @@ void send_queues(data_t *data)
         xQueueSend(xSDQueue, data, 0);  // Send to SD card queue
         if (!(data->status & LFS_FULL)) // If LittleFS is not full, send to LittleFS queue
             xQueueSend(xLittleFSQueue, data, 0);
+        xQueueSend(xLoraQueue, data, 0); // Send to LoRa queue
     }
-    
-    if (xLoraQueue != NULL){
-            xQueueSend(xLoraQueue, data, 0);
-    }
-    // ESP_LOGI("Acquire", "Data sent to queues");
 }
 
 void task_acquire(void *pvParameters)
