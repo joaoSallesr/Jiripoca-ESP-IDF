@@ -12,9 +12,18 @@ void task_sd(void *pvParameters)
     sdmmc_card_t *card;
     file_counter_t counterSD = *(file_counter_t *)pvParameters;
 
+    // Settings for mounting FAT filesystem
+    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+        .format_if_mount_failed = CONFIG_SD_FORMAT_IF_MOUNT_FAILED,
+        .max_files = SD_MAX_FILES,
+        .allocation_unit_size = SD_UNIT_SIZE,
+    };
+    // Set CONFIG_SD_FORMAT_IF_MOUNT_FAILED to TRUE or FALSE
+    // When format_if_mount_failed is set to true, SD card will be partitioned and formatted
+    
     ESP_LOGI(TAG_SD, "Initializing SD card");
 
-    // Settings for initializing SD card
+    // Settings for initializing SPI bus
     spi_bus_config_t bus_config = {
         .mosi_io_num = SD_MOSI,
         .miso_io_num = SD_MISO,
@@ -23,29 +32,19 @@ void task_sd(void *pvParameters)
         .quadhd_io_num = -1,
         .max_transfer_sz = SD_TRANSF_SIZE,
     };
-
-    // Settings for mounting FAT filesystem
-    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = CONFIG_SD_FORMAT_IF_MOUNT_FAILED, // TESTAR 00 (simplificação do FORMAT_IF_MOUNT_FAILED)
-        .max_files = SD_MAX_FILES,
-        .allocation_unit_size = SD_UNIT_SIZE,
-    };
-    // Set CONFIG_SD_FORMAT_IF_MOUNT_FAILED to TRUE or FALSE
-    // When format_if_mount_failed is set to true, SD card will be partitioned and formatted
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
 
     // SPI initializer
     ESP_LOGI(TAG_SD, "Using SPI peripheral");
-    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_config.gpio_cs = SD_CS;
-    slot_config.host_id = host.slot;
-
     errSD = spi_bus_initialize(host.slot, &bus_config, SDSPI_DEFAULT_DMA);
     if (errSD != ESP_OK)
     {
         ESP_LOGE(TAG_SD, "Failed to initialize SPI bus.");
-        return;
+        vTaskDelete(NULL);
     }
+    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot_config.gpio_cs = SD_CS;
+    slot_config.host_id = host.slot;
     ESP_LOGI(TAG_SD, "SPI bus initialized");
 
     // Mount filesystem
@@ -65,7 +64,7 @@ void task_sd(void *pvParameters)
         }
         spi_bus_free(host.slot);
         ESP_LOGI(TAG_SD, "SPI bus freed");
-        return;
+        vTaskDelete(NULL);
     }
     ESP_LOGI(TAG_SD, "Filesystem mounted");
 
@@ -105,38 +104,28 @@ void task_sd(void *pvParameters)
         ESP_LOGI(TAG_SD, "Card unmounted");
         spi_bus_free(host.slot);
         ESP_LOGI(TAG_SD, "SPI bus freed");
-        return;
+        vTaskDelete(NULL);
     }
     fclose(f);
 
     while (true)
     {
-        //data_t data;                                                  // 01
-        data_t buffer[SD_BUFFER_COUNT]; 
+        data_t buffer[CONFIG_SD_BUFFER_SIZE / sizeof(data_t)]; 
 
         // Read data from queue
-        for (int i = 0; i < SD_BUFFER_COUNT; ++i)
+        for (int i = 0; i < CONFIG_SD_BUFFER_SIZE / sizeof(data_t); ++i)
         {
-            xQueueReceive(xSDQueue, &buffer[i], portMAX_DELAY); // TESTAR 01 (testar se realmente é necessário criar o data_t data)
-            //xQueueReceive(xSDQueue, &data, portMAX_DELAY);            // 01
-            //buffer[i] = data;                                         // 01
+            xQueueReceive(xSDQueue, &buffer[i], portMAX_DELAY);
         }
+
         // Write buffer to file
         f = fopen(log_name, "a");
         if (f == NULL)
         {
             ESP_LOGE(TAG_SD, "Failed to open file for writing");
-            esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
-            ESP_LOGI(TAG_SD, "Card unmounted");
-            spi_bus_free(host.slot);
-            ESP_LOGI(TAG_SD, "SPI bus freed");
-            return;
         }
-
-        fwrite(buffer, sizeof(data_t), SD_BUFFER_COUNT, f);
-        fflush(f);                                              // TESTAR 02 (necessidade do flush e se resolve o problema)
+        fwrite(buffer, sizeof(data_t), CONFIG_SD_BUFFER_SIZE / sizeof(data_t), f);
         fclose(f);
-
         ESP_LOGI(TAG_SD, "Data written to SD card");
 
         // Check if landed
@@ -164,8 +153,6 @@ void task_littlefs(void *pvParameters)
     esp_err_t errFS;
     file_counter_t counterFS = *(file_counter_t *)pvParameters;
 
-    ESP_LOGW(TAG_LITTLEFS, "Initializing LittleFS");
-
     // Settings for initializing LittleFS
     esp_vfs_littlefs_conf_t littlefs_config = {
         .base_path = "/littlefs",
@@ -174,6 +161,7 @@ void task_littlefs(void *pvParameters)
         .dont_mount = false,
     };
 
+    ESP_LOGW(TAG_LITTLEFS, "Initializing LittleFS");
     errFS = esp_vfs_littlefs_register(&littlefs_config);
     if (errFS != ESP_OK)
     {
@@ -189,7 +177,7 @@ void task_littlefs(void *pvParameters)
         {
             ESP_LOGE(TAG_LITTLEFS, "Failed to initialize LittleFS (%s)", esp_err_to_name(errFS));
         }
-        return;
+        vTaskDelete(NULL);
     }
 
     size_t total = 0, used = 0;
@@ -229,22 +217,20 @@ void task_littlefs(void *pvParameters)
         ESP_LOGE(TAG_LITTLEFS, "Failed to open file for writing");
         esp_vfs_littlefs_unregister(littlefs_config.partition_label);
         ESP_LOGI(TAG_LITTLEFS, "LittleFS unmounted");
-        return;
+        vTaskDelete(NULL);
     }
-    uint32_t oldest_file_num = counterFS.file_num;
     fclose(f);
+
+    uint32_t oldest_file_num = counterFS.file_num;
 
     while (true)
     {
-        //data_t data;                                                  // 03
-        data_t buffer[FS_BUFFER_COUNT];
+        data_t buffer[CONFIG_LITTLEFS_BUFFER_SIZE / sizeof(data_t)];
 
         // Read data from queue
-        for (int i = 0; i < FS_BUFFER_COUNT; ++i)
+        for (int i = 0; i < CONFIG_LITTLEFS_BUFFER_SIZE / sizeof(data_t); ++i)
         {
-            xQueueReceive(xLittleFSQueue, &buffer[i], portMAX_DELAY);   // TESTAR 03 (mesmo caso do SD 01)
-            //xQueueReceive(xLittleFSQueue, &data, portMAX_DELAY);      // 03
-            //buffer[i] = data;                                         // 03
+            xQueueReceive(xLittleFSQueue, &buffer[i], portMAX_DELAY);  
         }
 
         // Delete oldest file if disk space is full
@@ -287,21 +273,13 @@ void task_littlefs(void *pvParameters)
         if (f == NULL)
         {
             ESP_LOGE(TAG_LITTLEFS, "Failed to open file for writing");
-            esp_vfs_littlefs_unregister(littlefs_config.partition_label);
-            ESP_LOGI(TAG_LITTLEFS, "LittleFS unmounted");
-            return;
-        }
-            
-        fwrite(buffer, sizeof(data_t), FS_BUFFER_COUNT, f);
-
-        fflush(f);                                                          // TESTAR 04 (mesmo caso do SD 02)
+        } 
+        fwrite(buffer, sizeof(data_t), CONFIG_LITTLEFS_BUFFER_SIZE / sizeof(data_t), f);
         fclose(f);                             
+        ESP_LOGI(TAG_LITTLEFS, "Data written to LittleFS.");
 
         // Update used space tracker
-        esp_littlefs_info(littlefs_config.partition_label, &total, &used);  // TESTAR 05 (se é melhor que o used+=)
-        //used += sizeof(buffer);  
-
-        ESP_LOGI(TAG_LITTLEFS, "Data written to LittleFS.");
+        used += sizeof(buffer);  
 
         // Check if landed
         xSemaphoreTake(xStatusMutex, portMAX_DELAY);
