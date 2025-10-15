@@ -77,9 +77,7 @@ void task_sd(void *pvParameters)
             ESP_LOGE(TAG_SD, "Failed to format FATFS (%s)", esp_err_to_name(errSD));
         }
         else
-        {
             ESP_LOGI(TAG_SD, "Format Successful");
-        }
         
         esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
         ESP_LOGI(TAG_SD, "Card unmounted");
@@ -166,17 +164,14 @@ void task_littlefs(void *pvParameters)
     if (errFS != ESP_OK)
     {
         if (errFS == ESP_FAIL)
-        {
             ESP_LOGE(TAG_LITTLEFS, "Failed to mount or format filesystem");
-        }
+
         else if (errFS == ESP_ERR_NOT_FOUND)
-        {
             ESP_LOGE(TAG_LITTLEFS, "Failed to find LittleFS partition");
-        }
+
         else
-        {
             ESP_LOGE(TAG_LITTLEFS, "Failed to initialize LittleFS (%s)", esp_err_to_name(errFS));
-        }
+
         vTaskDelete(NULL);
     }
 
@@ -200,9 +195,8 @@ void task_littlefs(void *pvParameters)
             ESP_LOGE(TAG_LITTLEFS, "Failed to format LittleFS (%s)", esp_err_to_name(errFS));
         }
         else
-        {
             ESP_LOGI(TAG_LITTLEFS, "Format Successful");
-        }
+
         vTaskDelete(NULL);
     }
 
@@ -273,7 +267,7 @@ void task_littlefs(void *pvParameters)
         if (f == NULL)
         {
             ESP_LOGE(TAG_LITTLEFS, "Failed to open file for writing");
-        } 
+        }
         fwrite(buffer, sizeof(data_t), CONFIG_LITTLEFS_BUFFER_SIZE / sizeof(data_t), f);
         fclose(f);                             
         ESP_LOGI(TAG_LITTLEFS, "Data written to LittleFS.");
