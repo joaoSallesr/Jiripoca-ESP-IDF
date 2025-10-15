@@ -175,7 +175,7 @@ void init_icm20948(icm20948_device_t *icm)
 
     // ICM20948 scale range config 
     icm20948_fss_t myfss = {.a = GPM_16,
-                            .g = DPS_2000, 
+                            .g = DPS_500, 
 
     };
      
@@ -210,9 +210,9 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
     data->accel_x = agmt->acc.axes.x/ICM_SCALE_16G;
     data->accel_y = agmt->acc.axes.y/ICM_SCALE_16G;
     data->accel_z = agmt->acc.axes.z/ICM_SCALE_16G;
-    data->rotation_x = agmt->gyr.axes.x/ICM_SCALE_2000DPS;
-    data->rotation_y = agmt->gyr.axes.y/ICM_SCALE_2000DPS;
-    data->rotation_z = agmt->gyr.axes.z/ICM_SCALE_2000DPS;
+    data->rotation_x = agmt->gyr.axes.x/ICM_SCALE_500DPS;
+    data->rotation_y = agmt->gyr.axes.y/ICM_SCALE_500DPS;
+    data->rotation_z = agmt->gyr.axes.z/ICM_SCALE_500DPS;
     data->magnet_x = agmt->mag.axes.x/ICM_SCALE_4900μT;
     data->magnet_y = agmt->mag.axes.y/ICM_SCALE_4900μT;
     data->magnet_z = agmt->mag.axes.z/ICM_SCALE_4900μT;

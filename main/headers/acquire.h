@@ -14,6 +14,7 @@
 #define GPS_BAUD_RATE 115200
 
 #define ICM_SCALE_16G 2048.0f
+#define ICM_SCALE_500DPS 65.5f 
 #define ICM_SCALE_2000DPS 16.4f
 #define ICM_SCALE_4900μT 0.15f
 
