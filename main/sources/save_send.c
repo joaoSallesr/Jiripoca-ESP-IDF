@@ -289,3 +289,126 @@ void task_littlefs(void *pvParameters)
             xSemaphoreGive(xStatusMutex);
     }
 }
+
+static SemaphoreHandle_t xLoraAuxSem = NULL;
+
+static void IRAM_ATTR handle_interrupt_fromisr(void *arg) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    xSemaphoreGiveFromISR(xLoraAuxSem, &xHigherPriorityTaskWoken);
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+static bool lora_send_data_blocking(const data_t *p)
+{
+    const uint8_t *buf = (const uint8_t *)p;
+    const int total = sizeof(data_t);
+    int written = 0;
+    int attempt = 0;
+
+    // this will try to write all bytes
+    while (written < total && attempt < LORA_TX_RETRIES) {
+        int w = uart_write_bytes(UART_NUM_2, (const char *)(buf + written), total - written);
+        if (w > 0) {
+            written += w;
+            //ESP_LOGD(TAG_LORA, "uart_write_bytes wrote %d/%d", written, total);
+        } else {
+            ESP_LOGW(TAG_LORA, "uart_write_bytes returned %d, retrying...", w);
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        attempt++;
+    }
+
+    if (written != total) {
+        ESP_LOGE(TAG_LORA, "Failed to write full payload to UART (%d/%d)", written, total);
+        return false;
+    }
+
+    // Wait for UART TX to complete
+    esp_err_t werr = uart_wait_tx_done(UART_NUM_2, pdMS_TO_TICKS(CONFIG_E220_TX_DONE_TIMEOUT_MS));
+    if (werr != ESP_OK) {
+        ESP_LOGW(TAG_LORA, "uart_wait_tx_done returned %s", esp_err_to_name(werr));
+        // we still wait for AUX below, but this indicates driver-level issues
+    }
+
+    // Wait for AUX to go HIGH again
+    if (xLoraAuxSem != NULL) {
+        if (xSemaphoreTake(xLoraAuxSem, pdMS_TO_TICKS(CONFIG_E220_AUX_TIMEOUT_MS)) == pdTRUE) {
+            // AUX confirmed = success
+            //ESP_LOGD(TAG_LORA, "AUX confirmed transmission finished");
+            return true;
+        } else {
+            ESP_LOGW(TAG_LORA, "Timeout waiting for AUX after UART TX");
+            return false;
+        }
+    } else {
+        // if the semaphore is NULL, fallback to polling (should not happen)
+        uint32_t start = esp_log_timestamp();
+        while (gpio_get_level(E220_AUX) == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+            if ((esp_log_timestamp() - start) > CONFIG_E220_AUX_TIMEOUT_MS) {
+                ESP_LOGW(TAG_LORA, "Timeout polling AUX after UART TX");
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+void lora_init(void)
+{
+    uart_config_t uart_config = {
+        .baud_rate = LORA_BAUD_RATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity    = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE
+    };
+
+    ESP_ERROR_CHECK(uart_param_config(LORA_UART_NUM, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(LORA_UART_NUM, E220_TX, E220_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_driver_install(LORA_UART_NUM, 2048, 2048, 0, NULL, 0));
+
+    xLoraAuxSem = xSemaphoreCreateBinary();
+
+    gpio_set_direction(E220_AUX, GPIO_MODE_INPUT);
+    gpio_pullup_dis(E220_AUX);
+    gpio_set_intr_type(E220_AUX, GPIO_INTR_POSEDGE);
+
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(E220_AUX, handle_interrupt_fromisr, NULL);
+
+    ESP_LOGI(TAG_LORA, "LoRa UART initialized (baud %d)", LORA_BAUD_RATE);
+}
+
+void task_lora(void *pvParameters)
+{
+    data_t data;
+
+    lora_init();
+
+    while (true)
+    {
+        while (xQueueReceive(xLoraQueue, &data, portMAX_DELAY) == pdTRUE)
+        {
+            // Wait for AUX HIGH before transmission
+            uint32_t start = esp_log_timestamp();
+            while (gpio_get_level(E220_AUX) == 0) {
+                vTaskDelay(pdMS_TO_TICKS(1));
+                if ((esp_log_timestamp() - start) > CONFIG_E220_AUX_TIMEOUT_MS) {
+                    ESP_LOGW(TAG_LORA, "Timeout waiting for AUX before TX");
+                    break;
+                }
+            }
+
+            bool ok = lora_send_data_blocking(&data); 
+            if (ok == false) { 
+                ESP_LOGE(TAG_LORA, "Failed to send LoRa packet — discarded"); 
+            }
+            // Wait for ISR to signal that AUX went HIGH again (finished TX)
+            xSemaphoreTake(xLoraAuxSem, pdMS_TO_TICKS(1000));
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}

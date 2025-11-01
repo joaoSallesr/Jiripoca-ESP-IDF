@@ -228,8 +228,10 @@ void app_main(void)
     // Create Queues
     static const int alt_queue_size = 10;
     static const int littlefs_queue_size = 5;
+    static const int lora_queue_size = 5;
     xAltQueue = xQueueCreate(alt_queue_size, sizeof(float));
     xLittleFSQueue = xQueueCreate(littlefs_queue_size, sizeof(data_t));
+    xLoraQueue = xQueueCreate(lora_queue_size, sizeof(data_t));
 
     file_counter_t counter_sd, counter_lfs;
     manage_nvs_counters(format_mode, &counter_sd, &counter_lfs);
@@ -256,6 +258,7 @@ void app_main(void)
     xTaskCreate(task_sd, "SD", configMINIMAL_STACK_SIZE * 4, &counter_sd, 5, NULL);
     xTaskCreate(task_littlefs, "LittleFS", configMINIMAL_STACK_SIZE * 4, &counter_lfs, 5, NULL);
     xTaskCreate(task_buzzer_led, "Buzzer LED", configMINIMAL_STACK_SIZE * 2, NULL, 3, NULL);
+    xTaskCreate(task_lora, "LoRa", configMINIMAL_STACK_SIZE * 4, NULL, 5, &xTaskLora);
 
     bool arm = false;
     bool disarm = false;
