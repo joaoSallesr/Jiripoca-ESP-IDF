@@ -56,7 +56,7 @@
 #define LFS_FULL (1 << 7)
 
 // Data structure to store sensor data
-typedef struct // size = 64 bytes
+typedef struct // size = 80 bytes
 {
     int32_t time;
     uint32_t status;
@@ -73,6 +73,10 @@ typedef struct // size = 64 bytes
     float rotation_x; // Heading
     float rotation_y; // Pitch
     float rotation_z; // Roll
+
+    float magnet_x;
+    float magnet_y;
+    float magnet_z;
 
     float latitude;
     float longitude;

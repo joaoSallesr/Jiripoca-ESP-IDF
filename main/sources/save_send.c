@@ -10,9 +10,20 @@ void task_sd(void *pvParameters)
 {
     esp_err_t errSD;
     sdmmc_card_t *card;
-    file_counter_t counter = *(file_counter_t *)pvParameters;
+    file_counter_t counterSD = *(file_counter_t *)pvParameters;
 
-    // Settings for initializing SD card
+    // Settings for mounting FAT filesystem
+    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+        .format_if_mount_failed = CONFIG_SD_FORMAT_IF_MOUNT_FAILED,
+        .max_files = SD_MAX_FILES,
+        .allocation_unit_size = SD_UNIT_SIZE,
+    };
+    // Set CONFIG_SD_FORMAT_IF_MOUNT_FAILED to TRUE or FALSE
+    // When format_if_mount_failed is set to true, SD card will be partitioned and formatted
+    
+    ESP_LOGI(TAG_SD, "Initializing SD card");
+
+    // Settings for initializing SPI bus
     spi_bus_config_t bus_config = {
         .mosi_io_num = SD_MOSI,
         .miso_io_num = SD_MISO,
@@ -21,31 +32,19 @@ void task_sd(void *pvParameters)
         .quadhd_io_num = -1,
         .max_transfer_sz = SD_TRANSF_SIZE,
     };
-
-    // Settings for mounting FAT filesystem
-    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = CONFIG_SD_FORMAT_IF_MOUNT_FAILED, // Test changes later (!!!)
-        .max_files = SD_MAX_FILES,
-        .allocation_unit_size = SD_UNIT_SIZE,
-    };
-    // Set CONFIG_SD_FORMAT_IF_MOUNT_FAILED to TRUE or FALSE
-    // When format_if_mount_failed is set to true, SD card will be partitioned and formatted
-
-    ESP_LOGI(TAG_SD, "Initializing SD card");
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
 
     // SPI initializer
     ESP_LOGI(TAG_SD, "Using SPI peripheral");
-    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_config.gpio_cs = SD_CS;
-    slot_config.host_id = host.slot;
-
     errSD = spi_bus_initialize(host.slot, &bus_config, SDSPI_DEFAULT_DMA);
     if (errSD != ESP_OK)
     {
         ESP_LOGE(TAG_SD, "Failed to initialize SPI bus.");
-        return;
+        vTaskDelete(NULL);
     }
+    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
+    slot_config.gpio_cs = SD_CS;
+    slot_config.host_id = host.slot;
     ESP_LOGI(TAG_SD, "SPI bus initialized");
 
     // Mount filesystem
@@ -56,19 +55,21 @@ void task_sd(void *pvParameters)
         if (errSD == ESP_FAIL)
         {
             ESP_LOGE(TAG_SD, "Failed to mount filesystem. "
-                             "If you want the card to be formatted, set the CONFIG_EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.");
+                             "If you want the card to be formatted, set the CONFIG_SD_FORMAT_IF_MOUNT_FAILED menuconfig option.");
         }
         else
         {
             ESP_LOGE(TAG_SD, "Failed to initialize the card (%s). ",
                      esp_err_to_name(errSD));
         }
-        return;
+        spi_bus_free(host.slot);
+        ESP_LOGI(TAG_SD, "SPI bus freed");
+        vTaskDelete(NULL);
     }
     ESP_LOGI(TAG_SD, "Filesystem mounted");
 
     // Format mode
-    if (counter.format == pdTRUE)
+    if (counterSD.format == pdTRUE)
     {
         errSD = esp_vfs_fat_sdcard_format(SD_MOUNT, card);
         if (errSD != ESP_OK)
@@ -77,8 +78,11 @@ void task_sd(void *pvParameters)
         }
         else
             ESP_LOGI(TAG_SD, "Format Successful");
+        
         esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
         ESP_LOGI(TAG_SD, "Card unmounted");
+        spi_bus_free(host.slot);
+        ESP_LOGI(TAG_SD, "SPI bus freed");        
         vTaskDelete(NULL);
     }
 
@@ -86,8 +90,8 @@ void task_sd(void *pvParameters)
     sdmmc_card_print_info(stdout, card);
 
     // Create log file
-    char log_name[32];
-    snprintf(log_name, 32, "%s/flight%ld.bin", SD_MOUNT, counter.file_num);
+    char log_name[FILENAME_LENGTH];
+    snprintf(log_name, FILENAME_LENGTH, "%s/flight%ld.bin", SD_MOUNT, counterSD.file_num);
     ESP_LOGI(TAG_SD, "Creating file %s", log_name);
 
     FILE *f = fopen(log_name, "w");
@@ -96,34 +100,30 @@ void task_sd(void *pvParameters)
         ESP_LOGE(TAG_SD, "Failed to open file for writing");
         esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
         ESP_LOGI(TAG_SD, "Card unmounted");
-        return;
+        spi_bus_free(host.slot);
+        ESP_LOGI(TAG_SD, "SPI bus freed");
+        vTaskDelete(NULL);
     }
     fclose(f);
 
     while (true)
     {
-        data_t data;
-        data_t buffer[SD_BUFFER_COUNT]; 
+        data_t buffer[CONFIG_SD_BUFFER_SIZE / sizeof(data_t)]; 
 
         // Read data from queue
-        for (int i = 0; i < SD_BUFFER_COUNT; ++i)
+        for (int i = 0; i < CONFIG_SD_BUFFER_SIZE / sizeof(data_t); ++i)
         {
-            xQueueReceive(xSDQueue, &buffer[i], portMAX_DELAY); // TESTAR
-            //xQueueReceive(xSDQueue, &data, portMAX_DELAY);
-            //buffer[i] = data;
+            xQueueReceive(xSDQueue, &buffer[i], portMAX_DELAY);
         }
 
         // Write buffer to file
         f = fopen(log_name, "a");
-        if (f == NULL) //rever esse f == NULL
+        if (f == NULL)
         {
             ESP_LOGE(TAG_SD, "Failed to open file for writing");
         }
-        fwrite(buffer, sizeof(data_t), SD_BUFFER_COUNT, f);
-        
-        fflush(f); // TESTAR
+        fwrite(buffer, sizeof(data_t), CONFIG_SD_BUFFER_SIZE / sizeof(data_t), f);
         fclose(f);
-
         ESP_LOGI(TAG_SD, "Data written to SD card");
 
         // Check if landed
@@ -131,10 +131,14 @@ void task_sd(void *pvParameters)
         if (STATUS & LANDED)
         {
             xSemaphoreGive(xStatusMutex);
+
             ESP_LOGW(TAG_SD, "Landed, unmounting SD card");
             esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
             ESP_LOGI(TAG_SD, "Card unmounted");
-            vTaskDelete(NULL); // Delete task
+            spi_bus_free(host.slot);
+            ESP_LOGI(TAG_SD, "SPI bus freed");
+
+            vTaskDelete(NULL);
         }
         else
             xSemaphoreGive(xStatusMutex);
@@ -144,33 +148,35 @@ void task_sd(void *pvParameters)
 // task_littlefs reads data from queue and writes it to LittleFS
 void task_littlefs(void *pvParameters)
 {
-    file_counter_t counter = *(file_counter_t *)pvParameters;
+    esp_err_t errFS;
+    file_counter_t counterFS = *(file_counter_t *)pvParameters;
 
-    // LittleFS INIT
-
-    ESP_LOGW(TAG_LITTLEFS, "Initializing LittleFS");
-
-    esp_vfs_littlefs_conf_t conf = {
+    // Settings for initializing LittleFS
+    esp_vfs_littlefs_conf_t littlefs_config = {
         .base_path = "/littlefs",
         .partition_label = "littlefs",
         .format_if_mount_failed = true,
         .dont_mount = false,
     };
 
-    esp_err_t errFS = esp_vfs_littlefs_register(&conf);
-
+    ESP_LOGW(TAG_LITTLEFS, "Initializing LittleFS");
+    errFS = esp_vfs_littlefs_register(&littlefs_config);
     if (errFS != ESP_OK)
     {
         if (errFS == ESP_FAIL)
             ESP_LOGE(TAG_LITTLEFS, "Failed to mount or format filesystem");
+
         else if (errFS == ESP_ERR_NOT_FOUND)
             ESP_LOGE(TAG_LITTLEFS, "Failed to find LittleFS partition");
+
         else
             ESP_LOGE(TAG_LITTLEFS, "Failed to initialize LittleFS (%s)", esp_err_to_name(errFS));
+
+        vTaskDelete(NULL);
     }
 
     size_t total = 0, used = 0;
-    errFS = esp_littlefs_info(conf.partition_label, &total, &used);
+    errFS = esp_littlefs_info(littlefs_config.partition_label, &total, &used);
     if (errFS != ESP_OK)
     {
         ESP_LOGE(TAG_LITTLEFS, "Failed to get LittleFS partition information (%s)", esp_err_to_name(errFS));
@@ -181,40 +187,44 @@ void task_littlefs(void *pvParameters)
     }
 
     // Format mode
-    if (counter.format == pdTRUE)
+    if (counterFS.format == pdTRUE)
     {
-        errFS = esp_littlefs_format(conf.partition_label);
+        errFS = esp_littlefs_format(littlefs_config.partition_label);
         if (errFS != ESP_OK)
         {
             ESP_LOGE(TAG_LITTLEFS, "Failed to format LittleFS (%s)", esp_err_to_name(errFS));
         }
         else
             ESP_LOGI(TAG_LITTLEFS, "Format Successful");
+
         vTaskDelete(NULL);
     }
 
     // Create log file
-    char log_name[32];
-    snprintf(log_name, 32, "%s/flight%ld.bin", conf.base_path, counter.file_num);
+    char log_name[FILENAME_LENGTH];
+    snprintf(log_name, FILENAME_LENGTH, "%s/flight%ld.bin", littlefs_config.base_path, counterFS.file_num);
     ESP_LOGI(TAG_LITTLEFS, "Creating file %s", log_name);
+
     FILE *f = fopen(log_name, "w");
     if (f == NULL)
     {
         ESP_LOGE(TAG_LITTLEFS, "Failed to open file for writing");
+        esp_vfs_littlefs_unregister(littlefs_config.partition_label);
+        ESP_LOGI(TAG_LITTLEFS, "LittleFS unmounted");
+        vTaskDelete(NULL);
     }
+    fclose(f);
 
-    uint32_t oldest_file_num = counter.file_num;
+    uint32_t oldest_file_num = counterFS.file_num;
 
     while (true)
     {
-        data_t data;
         data_t buffer[CONFIG_LITTLEFS_BUFFER_SIZE / sizeof(data_t)];
 
         // Read data from queue
         for (int i = 0; i < CONFIG_LITTLEFS_BUFFER_SIZE / sizeof(data_t); ++i)
         {
-            xQueueReceive(xLittleFSQueue, &data, portMAX_DELAY);
-            buffer[i] = data;
+            xQueueReceive(xLittleFSQueue, &buffer[i], portMAX_DELAY);  
         }
 
         // Delete oldest file if disk space is full
@@ -222,9 +232,11 @@ void task_littlefs(void *pvParameters)
         {
             oldest_file_num++;
             if (oldest_file_num > CONFIG_MAX_LFS_FILES)
+            {
                 oldest_file_num = 0;
-            char oldest_file_name[32];
-            snprintf(oldest_file_name, 32, "%s/flight%ld.bin", conf.base_path, oldest_file_num);
+            }
+            char oldest_file_name[FILENAME_LENGTH];
+            snprintf(oldest_file_name, FILENAME_LENGTH, "%s/flight%ld.bin", littlefs_config.base_path, oldest_file_num);
 
             struct stat st;
             if (stat(oldest_file_name, &st) == 0) // If file exists
@@ -233,20 +245,20 @@ void task_littlefs(void *pvParameters)
                 unlink(oldest_file_name); // Delete file
             }
 
-            esp_littlefs_info(conf.partition_label, &total, &used); // Update used space
+            esp_littlefs_info(littlefs_config.partition_label, &total, &used); // Update used space
 
-            if (oldest_file_num == counter.file_num) // If oldest file is current file
+            if (oldest_file_num == counterFS.file_num) // If oldest file is current file
             {
                 ESP_LOGE(TAG_LITTLEFS, "No more disk space, unmounting LittleFS");
 
-                esp_vfs_littlefs_unregister(conf.partition_label);
+                esp_vfs_littlefs_unregister(littlefs_config.partition_label);
                 ESP_LOGI(TAG_LITTLEFS, "LittleFS unmounted");
 
                 xSemaphoreTake(xStatusMutex, portMAX_DELAY);
                 STATUS |= LFS_FULL;
                 xSemaphoreGive(xStatusMutex);
 
-                vTaskDelete(NULL); // Delete task
+                vTaskDelete(NULL);
             }
         }
 
@@ -257,9 +269,11 @@ void task_littlefs(void *pvParameters)
             ESP_LOGE(TAG_LITTLEFS, "Failed to open file for writing");
         }
         fwrite(buffer, sizeof(data_t), CONFIG_LITTLEFS_BUFFER_SIZE / sizeof(data_t), f);
-        fclose(f);
-        used += sizeof(buffer);
+        fclose(f);                             
         ESP_LOGI(TAG_LITTLEFS, "Data written to LittleFS.");
+
+        // Update used space tracker
+        used += sizeof(buffer);  
 
         // Check if landed
         xSemaphoreTake(xStatusMutex, portMAX_DELAY);
@@ -267,7 +281,7 @@ void task_littlefs(void *pvParameters)
         {
             xSemaphoreGive(xStatusMutex);
             ESP_LOGW(TAG_LITTLEFS, "Landed, unmounting LittleFS");
-            esp_vfs_littlefs_unregister(conf.partition_label);
+            esp_vfs_littlefs_unregister(littlefs_config.partition_label);
             ESP_LOGI(TAG_LITTLEFS, "LittleFS unmounted");
             vTaskDelete(NULL);
         }
