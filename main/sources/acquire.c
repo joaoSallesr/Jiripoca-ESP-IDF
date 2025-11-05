@@ -171,24 +171,28 @@ void task_gps(void *pvParameters){
 
 void init_icm20948(icm20948_device_t *icm)
 {
-    i2c_master_dev_handle_t dev_handle = NULL;
-
-    // standard ICM20948 config
-    icm0948_config_i2c_t icm_config = { .i2c_dev = dev_handle,
-	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD0 };
-
-    i2c_device_config_t dev_cfg = {
+    i2c_master_dev_handle_t icm_handle;
+    
+    i2c_device_config_t icm_dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = ICM_20948_I2C_ADDR_AD0,
         .scl_speed_hz = 400000,
     };
+
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &icm_dev_cfg, &icm_handle));
+
+    // standard ICM20948 config
+    icm0948_config_i2c_t icm_config = {
+        .i2c_dev = icm_handle,
+        .i2c_addr = ICM_20948_I2C_ADDR_AD0
+    };
+
 
     // ICM20948 scale range config 
     icm20948_fss_t myfss = {.a = GPM_16,
                             .g = DPS_500, 
 
     };
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
 
     // setup ICM20948
     icm20948_init_i2c(icm, &icm_config);
@@ -204,6 +208,7 @@ void init_icm20948(icm20948_device_t *icm)
     icm20948_sleep(icm, false);
 	icm20948_low_power(icm, false);
     icm20948_set_full_scale(icm, sensors, myfss);
+    vTaskDelay(pdMS_TO_TICKS(250));
 }
 
 void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agmt)
@@ -229,25 +234,21 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
 
 esp_err_t bmp_init(void)
 {
-    i2c_master_dev_handle_t dev_handle = NULL;
+    i2c_master_dev_handle_t bmp_handle;
 
-    i2c_device_config_t bmp_config = {
+    i2c_device_config_t bmp_i2c_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = BMP390_I2C_ADDRESS,
-        .scl_speed_hz = 40000
+        .scl_speed_hz = 400000,
     };
-    
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &bmp_config, &dev_handle));
-    // BMP390 Initialization
-    bmp390_config_t dev_cfg = I2C_BMP390_CONFIG_DEFAULT;
-    dev_cfg.i2c_address = BMP390_I2C_ADDRESS;
-    esp_err_t err;
-    err = bmp390_init(bus_handle, &dev_cfg, &bmp_dev_hdl);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG_BMP, "init failed: %s", esp_err_to_name(err));
-        return err;
-    }
-    err = bmp390_set_iir_filter(bmp_dev_hdl, BMP390_IIR_FILTER_3);
-    if (err != ESP_OK) ESP_LOGE(TAG_BMP, "set IIR filter failed: %s", esp_err_to_name(err));
+
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &bmp_i2c_cfg, &bmp_handle));
+
+    bmp390_config_t bmp_cfg = I2C_BMP390_CONFIG_DEFAULT;
+    bmp_cfg.i2c_address = BMP390_I2C_ADDRESS;
+
+    ESP_ERROR_CHECK(bmp390_init(bus_handle, &bmp_cfg, &bmp_dev_hdl));
+    ESP_ERROR_CHECK(bmp390_set_iir_filter(bmp_dev_hdl, BMP390_IIR_FILTER_3));
     return ESP_OK;
 }
 
@@ -256,18 +257,11 @@ void acquire_bmp390(data_t* data, bmp390_handle_t dev_hdl)
     ESP_LOGI(TAG_BMP, "######################## BMP390 - START #########################");
 
     // sensor readings
-    esp_err_t result = bmp390_get_measurements(bmp_dev_hdl, &data->temperature, &data->pressure);
+    ESP_ERROR_CHECK(bmp390_get_measurements(bmp_dev_hdl, &data->temperature, &data->pressure));
     
-    if (result != ESP_OK)
-    {
-        ESP_LOGE(TAG_BMP, "bmp390 device read failed (%s)", esp_err_to_name(result));
-    }
-    else 
-    {
-        data->pressure = data->pressure / 100.0f;
-        ESP_LOGI(TAG_BMP, "air temperature:      %.2f °C", data->temperature);
-        ESP_LOGI(TAG_BMP, "barometric pressure: %.2f hPa", data->pressure);
-    }
+    data->pressure = data->pressure / 100.0f;
+    ESP_LOGI(TAG_BMP, "air temperature:      %.2f °C", data->temperature);
+    ESP_LOGI(TAG_BMP, "barometric pressure: %.2f hPa", data->pressure);
 
     float temp_altitude = 0;
     // BMP390 altitude calculation (barometric formula)
