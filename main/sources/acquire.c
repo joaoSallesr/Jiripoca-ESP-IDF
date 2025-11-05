@@ -10,6 +10,18 @@ static const char *TAG_ACQ = "Acquire";
 static const char *TAG_ICM = "ICM20948";
 static const char *TAG_BMP = "BMP390";
 
+i2c_master_bus_handle_t bus_handle = NULL;
+static bmp390_handle_t bmp_dev_hdl;
+
+// standard i2c bus config
+i2c_master_bus_config_t bus_config = {
+    .i2c_port = I2C_MASTER_NUM,
+    .sda_io_num = I2C_SDA,
+    .scl_io_num = I2C_SCL,
+    .clk_source = I2C_CLK_SRC_DEFAULT,
+    .glitch_ignore_cnt = 7,
+    .flags.enable_internal_pullup = true,
+};
 
 void adc_init(adc_oneshot_unit_handle_t *adc_unit_handle, adc_cali_handle_t *adc_cali_handle) {
     adc_oneshot_unit_init_cfg_t unit_config = {
@@ -159,29 +171,24 @@ void task_gps(void *pvParameters){
 
 void init_icm20948(icm20948_device_t *icm)
 {
-
-    // standard i2c bus config
-    i2c_config_t bus_config = { .mode = I2C_MODE_MASTER,
-	                            .sda_io_num = (gpio_num_t) I2C_SDA,
-	                            .sda_pullup_en = GPIO_PULLUP_ENABLE,
-	                            .scl_io_num = (gpio_num_t) I2C_SCL,
-	                            .scl_pullup_en = GPIO_PULLUP_ENABLE,
-	                            .master.clk_speed = I2C_MASTER_FREQ_HZ,
-	                            .clk_flags = 0 };
+    i2c_master_dev_handle_t dev_handle = NULL;
 
     // standard ICM20948 config
-    icm0948_config_i2c_t icm_config = { .i2c_port = I2C_MASTER_NUM,
+    icm0948_config_i2c_t icm_config = { .i2c_dev = dev_handle,
 	                                    .i2c_addr = ICM_20948_I2C_ADDR_AD0 };
+
+    i2c_device_config_t dev_cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = ICM_20948_I2C_ADDR_AD0,
+        .scl_speed_hz = 400000,
+    };
 
     // ICM20948 scale range config 
     icm20948_fss_t myfss = {.a = GPM_16,
                             .g = DPS_500, 
 
     };
-     
-    // setup i2c
-	ESP_ERROR_CHECK(i2c_param_config(icm_config.i2c_port, &bus_config));
-	ESP_ERROR_CHECK(i2c_driver_install(icm_config.i2c_port, bus_config.mode, 0, 0, 0));
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
 
     // setup ICM20948
     icm20948_init_i2c(icm, &icm_config);
@@ -220,54 +227,36 @@ void acquire_icm20948(data_t *data, icm20948_device_t *icm, icm20948_agmt_t *agm
     vTaskDelay(0);
 }
 
-void init_bmp390(bmp390_config_t* dev_cfg, bmp390_handle_t* dev_hdl)
+esp_err_t bmp_init(void)
 {
-   // init device
-   bmp390_init(i2c0_bus_hdl, &dev_cfg, &dev_hdl);
-   if (dev_hdl == NULL) {
-       ESP_LOGE(TAG_BMP, "bmp390 handle init failed");
-       assert(dev_hdl);
-   }
+    i2c_master_dev_handle_t dev_handle = NULL;
 
-   /* configuration registers */
-   bmp390_power_control_register_t     power_ctrl_reg;
-   bmp390_configuration_register_t     config_reg;
-   bmp390_oversampling_register_t      oversampling_reg;
-   bmp390_output_data_rate_register_t  output_data_rate_reg;
-   bmp390_interrupt_control_register_t interrupt_ctrl_reg;
-
-   /* attempt to read configuration register */
-   bmp390_get_configuration_register(dev_hdl, &config_reg);
-
-   /* attempt to read oversampling register */
-   bmp390_get_oversampling_register(dev_hdl, &oversampling_reg);
-
-   /* attempt to read to power control register */
-   bmp390_get_power_control_register(dev_hdl, &power_ctrl_reg);
-
-   /* attempt to read to output data rate register */
-   bmp390_get_output_data_rate_register(dev_hdl, &output_data_rate_reg);
-
-   /* attempt to read to interrupt control register */
-   bmp390_get_interrupt_control_register(dev_hdl, &interrupt_ctrl_reg);
-
-
-   ESP_LOGI(TAG_BMP, "Configuration (0x%02x): %s", config_reg.reg,           uint8_to_binary(config_reg.reg));
-   ESP_LOGI(TAG_BMP, "Oversampling  (0x%02x): %s", oversampling_reg.reg,     uint8_to_binary(oversampling_reg.reg));
-   ESP_LOGI(TAG_BMP, "Data Rate     (0x%02x): %s", output_data_rate_reg.reg, uint8_to_binary(output_data_rate_reg.reg));
-   ESP_LOGI(TAG_BMP, "Power Control (0x%02x): %s", power_ctrl_reg.reg,       uint8_to_binary(power_ctrl_reg.reg));
-   ESP_LOGI(TAG_BMP, "Int Control   (0x%02x): %s", interrupt_ctrl_reg.reg,   uint8_to_binary(interrupt_ctrl_reg.reg));
-
-   if(interrupt_ctrl_reg.bits.irq_data_ready_enabled)
-       ESP_LOGE(TAG_BMP, "bmp390 irq data ready is enabled");
+    i2c_device_config_t bmp_config = {
+        .device_address = BMP390_I2C_ADDRESS,
+        .scl_speed_hz = 40000
+    };
+    
+    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &bmp_config, &dev_handle));
+    // BMP390 Initialization
+    bmp390_config_t dev_cfg = I2C_BMP390_CONFIG_DEFAULT;
+    dev_cfg.i2c_address = BMP390_I2C_ADDRESS;
+    esp_err_t err;
+    err = bmp390_init(bus_handle, &dev_cfg, &bmp_dev_hdl);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_BMP, "init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    err = bmp390_set_iir_filter(bmp_dev_hdl, BMP390_IIR_FILTER_3);
+    if (err != ESP_OK) ESP_LOGE(TAG_BMP, "set IIR filter failed: %s", esp_err_to_name(err));
+    return ESP_OK;
 }
 
-void acquire_bmp390(data_t* data, bmp390_handle_t* dev_hdl)
+void acquire_bmp390(data_t* data, bmp390_handle_t dev_hdl)
 {
     ESP_LOGI(TAG_BMP, "######################## BMP390 - START #########################");
 
     // sensor readings
-    esp_err_t result = bmp390_get_measurements(dev_hdl, &data->temperature, &data->pressure);
+    esp_err_t result = bmp390_get_measurements(bmp_dev_hdl, &data->temperature, &data->pressure);
     
     if (result != ESP_OK)
     {
@@ -361,6 +350,8 @@ void task_acquire(void *pvParameters)
 {
     xI2CMutex = xSemaphoreCreateMutex();
 
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &bus_handle));
+
     data_t data = {0};
 
     // ICM20948 
@@ -369,11 +360,7 @@ void task_acquire(void *pvParameters)
     init_icm20948(&icm);
 
     // BMP390
-
-    // init bmp390
-    bmp390_config_t dev_cfg = I2C_BMP390_CONFIG_DEFAULT;
-    bmp390_handle_t dev_hdl;
-    init_bmp390(&dev_cfg, &dev_hdl);
+    bmp_init();
 
     xTaskCreate(task_gps, "GPS", configMINIMAL_STACK_SIZE * 4, &data, 6, NULL);
 
@@ -397,7 +384,7 @@ void task_acquire(void *pvParameters)
         acquire_icm20948(&data, &icm, &agmt);
 
         // BMP390
-        acquire_bmp390(&data, &dev_hdl);
+        acquire_bmp390(&data, bmp_dev_hdl);
 
         status_checks(&data);
 

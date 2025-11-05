@@ -12,6 +12,7 @@
 #define R2 20000.0f // Resistor connected to ground
 
 #define GPS_BAUD_RATE 115200
+#define BMP390_I2C_ADDRESS (0x77) //red
 
 #define ICM_SCALE_16G 2048.0f
 #define ICM_SCALE_500DPS 65.5f 
