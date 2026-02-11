@@ -5,16 +5,16 @@ static const float exponent = -0.1902665f; // -R*L/g*M (R: universal gas constan
                                                      // g: gravitational acceleration,
                                                      // M: dry air molar mass)
 
-static const float standart_sea_pressure = 101325.0f; // Pa
-static const float standart_initial_temp = 298.0f; // K (25 C)
+static const float standard_sea_pressure = 101325.0f; // Pa
+static const float standard_initial_temp = 298.0f; // K (25 C)
 
 static float sea_pressure = 0.0f;
 static float initial_temp = 0.0f;
 
 static float get_altitude_from_pressure(const float pressure)
 {
-    float check_sea_pressure = (sea_pressure == 0) ? standart_sea_pressure : sea_pressure;
-    float check_initial_temp = (initial_temp == 0) ? standart_initial_temp : initial_temp;
+    float check_sea_pressure = (sea_pressure == 0) ? standard_sea_pressure : sea_pressure;
+    float check_initial_temp = (initial_temp == 0) ? standard_initial_temp : initial_temp;
 
     float alt = (1 - powf(pressure / check_sea_pressure, exponent)) * check_initial_temp / medium_lapse_rate;
     return alt;
