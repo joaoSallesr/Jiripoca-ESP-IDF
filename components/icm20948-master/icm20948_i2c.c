@@ -4,38 +4,43 @@
 icm20948_status_e icm20948_internal_write_i2c(uint8_t reg, uint8_t *data, uint32_t len, void *user)
 {
     icm20948_status_e status = ICM_20948_STAT_OK;
-    icm0948_config_i2c_t *args = (icm0948_config_i2c_t *)user;
-
-    // Cria buffer de escrita (registrador + dados)
-    uint8_t buf[len + 1];
-    buf[0] = reg;
-    memcpy(&buf[1], data, len);
-
-    esp_err_t ret = i2c_master_transmit(args->i2c_dev, buf, len + 1, pdMS_TO_TICKS(100));
-    if (ret != ESP_OK)
-    {
+    icm0948_config_i2c_t *args = (icm0948_config_i2c_t*)user;
+    
+    uint8_t *write_data = malloc(len + 1);
+    if (write_data == NULL) {
+        return ICM_20948_STAT_ERR;
+    }
+    
+    write_data[0] = reg;
+    memcpy(&write_data[1], data, len);
+    
+    esp_err_t ret = i2c_master_transmit(args->i2c_dev, write_data, len + 1, -1);
+    if (ret != ESP_OK) {
         status = ICM_20948_STAT_ERR;
     }
-
+    
+    free(write_data);
     return status;
 }
 
 icm20948_status_e icm20948_internal_read_i2c(uint8_t reg, uint8_t *buff, uint32_t len, void *user)
 {
     icm20948_status_e status = ICM_20948_STAT_OK;
-    icm0948_config_i2c_t *args = (icm0948_config_i2c_t *)user;
-
-    // Envia endereço do registrador e depois lê os dados
-    esp_err_t ret = i2c_master_transmit_receive(args->i2c_dev, &reg, 1, buff, len, pdMS_TO_TICKS(100));
-    if (ret != ESP_OK)
-    {
+    icm0948_config_i2c_t *args = (icm0948_config_i2c_t*)user;
+    
+    esp_err_t ret = i2c_master_transmit(args->i2c_dev, &reg, 1, -1);
+    if (ret != ESP_OK) {
+        return ICM_20948_STAT_ERR;
+    }
+    
+    ret = i2c_master_receive(args->i2c_dev, buff, len, -1);
+    if (ret != ESP_OK) {
         status = ICM_20948_STAT_ERR;
     }
-
+    
     return status;
 }
 
-/* default serif */
 icm20948_serif_t default_serif = {
     icm20948_internal_write_i2c,
     icm20948_internal_read_i2c,
