@@ -86,7 +86,19 @@ void bmp_task(void *pvParameters)
     bmp390_sample_t sample;
     static float initial_alt = 0.0f;
 
-    // tirar initial_temp e sea_temp do while(true) ?
+    // wait for a valid ICM temperature
+    while (initial_temp == 0)
+    {
+        icm20948_sample_t icm_sample;
+        portENTER_CRITICAL(&xICMMutex);
+        icm_sample = icm_sample_g;
+        portEXIT_CRITICAL(&xICMMutex);
+        initial_temp = icm_sample.initial_temperature;
+        if (initial_temp == 0)
+            vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    // get sea level temperature using KNOWN_ALTITUDE
+    sea_temp = initial_temp + 273.15f + (medium_lapse_rate * KNOWN_ALTITUDE);
 
     while (true)
     {
@@ -100,20 +112,6 @@ void bmp_task(void *pvParameters)
             ESP_LOGE("BMP390", "get measurements failed: %s", esp_err_to_name(err));
             continue;
         }
-
-        // get ICM20948 temperature
-        if (initial_temp == 0)
-        {
-            icm20948_sample_t icm_sample;
-            portENTER_CRITICAL(&xICMMutex);
-            icm_sample = icm_sample_g;
-            portEXIT_CRITICAL(&xICMMutex);
-            initial_temp = icm_sample.initial_temperature;
-        }
-
-        // get sea level temperature using KNOWN_ALTITUDE
-        if (sea_temp == 0)
-            sea_temp = initial_temp + 273.15f + (medium_lapse_rate * KNOWN_ALTITUDE);
 
         // get sea level pressure (20 loops)
         if (sea_pressure == 0)
