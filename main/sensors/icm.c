@@ -1,7 +1,7 @@
 #include "header.h"
 
 #define GYRO_SCALE_RAD GYRO_SCALE * 3.14159265359f / 180.0f // Convert from °/s to rad/s
-#define ACC_SCALE_MS2 ACC_SCALE * 9.80665f // Convert from g to m/s²
+#define ACC_SCALE_MS2 ACC_SCALE * 9.80665f                  // Convert from g to m/s²
 
 static const char *TAG = "ICM20948";
 
@@ -15,15 +15,17 @@ static void getGravityVector(float qw, float qx, float qy, float qz, float g[3])
 
 static void icm_init(icm20948_device_t *icm_dev)
 {
+    // ICM20948 struct setup
     icm20948_config_i2c_t icm_config = {
         .i2c_addr = ICM20948_I2C_ADDRESS,
         .i2c_clock_speed = I2C_SPEED,
     };
-    
-    /* setup icm20948 device */
+
+    // ICM20948 setup device
     xSemaphoreTake(xI2CMutex, portMAX_DELAY);
     ESP_ERROR_CHECK(icm20948_init_i2c(bus_handle, &icm_config, icm_dev));
     xSemaphoreGive(xI2CMutex);
+
     ESP_LOGI(TAG, "ICM20948 initialized");
 
     /* check ID */
@@ -61,7 +63,7 @@ static void icm_init(icm20948_device_t *icm_dev)
     // Set Gyro and Accelerometer to a particular sample mode
     // options: SAMPLE_MODE_CONTINUOUS; SAMPLE_MODE_CYCLED
     xSemaphoreTake(xI2CMutex, portMAX_DELAY);
-    stat = icm20948_set_sample_mode(icm_dev, sensors, SAMPLE_MODE_CONTINUOUS); 
+    stat = icm20948_set_sample_mode(icm_dev, sensors, SAMPLE_MODE_CONTINUOUS);
     xSemaphoreGive(xI2CMutex);
     if (stat != ICM_20948_STAT_OK)
         ESP_LOGE(TAG, "set sample mode failed: %d", stat);
@@ -126,55 +128,55 @@ void fusion_task(void *pvParameters)
 
     vqf_params_t params;
     vqf_params_init(&params);
-    vqf_handle_t* vqf = vqf_init_custom(&params, 1.0f / FUSION_SAMPLE_RATE_HZ, -1, 1.0f * 32 / 1100.0f); // gyrTs, accTs, magTs
+    vqf_handle_t *vqf = vqf_init_custom(&params, 1.0f / FUSION_SAMPLE_RATE_HZ, -1, 1.0f * 32 / 1100.0f); // gyrTs, accTs, magTs
 
     icm20948_sample_t icm;
     static float initial_temp = 0.0f;
 
     xLastWakeTime = xTaskGetTickCount();
-    while(true)
-	{
+    while (true)
+    {
         xTaskDelayUntil(&xLastWakeTime, xFrequency);
         icm20948_agmt_t agmt;
         xSemaphoreTake(xI2CMutex, portMAX_DELAY);
         icm20948_status_e stat = icm20948_get_agmt(&icm_dev, &agmt);
         xSemaphoreGive(xI2CMutex);
-		if (stat == ICM_20948_STAT_OK)
+        if (stat == ICM_20948_STAT_OK)
         {
-            if(initial_temp == 0)
-                initial_temp = (agmt.tmp.val*TEMP_SCALE + TEMP_OFFSET) + 273;
+            if (initial_temp == 0)
+                initial_temp = (agmt.tmp.val * TEMP_SCALE + TEMP_OFFSET) + 273;
 
             float gyr[3] = {agmt.gyr.axes.x * GYRO_SCALE_RAD, agmt.gyr.axes.y * GYRO_SCALE_RAD, agmt.gyr.axes.z * GYRO_SCALE_RAD};
             float acc[3] = {agmt.acc.axes.x * ACC_SCALE_MS2, agmt.acc.axes.y * ACC_SCALE_MS2, agmt.acc.axes.z * ACC_SCALE_MS2};
             float mag[3] = {agmt.mag.axes.x * MAG_SCALE, agmt.mag.axes.y * MAG_SCALE, agmt.mag.axes.z * MAG_SCALE};
             vqf_update(vqf, gyr, acc, mag);
-            
+
             float q[4];
             vqf_get_quat9D(vqf, q);
-            
+
             icm.q1 = q[0];
             icm.q2 = q[1];
             icm.q3 = q[2];
             icm.q4 = q[3];
-            
+
             // Update raw sensor data
             icm.accel_x = agmt.acc.axes.x;
             icm.accel_y = agmt.acc.axes.y;
             icm.accel_z = agmt.acc.axes.z;
-            
+
             icm.gyro_x = agmt.gyr.axes.x;
             icm.gyro_y = agmt.gyr.axes.y;
             icm.gyro_z = agmt.gyr.axes.z;
-            
+
             icm.mag_x = agmt.mag.axes.x;
             icm.mag_y = agmt.mag.axes.y;
             icm.mag_z = agmt.mag.axes.z;
-            
+
             float g[3];
             getGravityVector(q[0], q[1], q[2], q[3], g);
             float _acc[3] = {agmt.acc.axes.x * ACC_SCALE - g[0], agmt.acc.axes.y * ACC_SCALE - g[1], agmt.acc.axes.z * ACC_SCALE - g[2]};
-            float accel = sqrtf(_acc[0]*_acc[0] + _acc[1]*_acc[1] + _acc[2]*_acc[2]);
-            icm.accel = (uint8_t) lroundf(accel * 10.0f);
+            float accel = sqrtf(_acc[0] * _acc[0] + _acc[1] * _acc[1] + _acc[2] * _acc[2]);
+            icm.accel = (uint8_t)lroundf(accel * 10.0f);
             icm.temperature = agmt.tmp.val;
             icm.initial_temperature = initial_temp;
 
@@ -184,8 +186,9 @@ void fusion_task(void *pvParameters)
             portEXIT_CRITICAL(&xICMMutex);
 
             xTaskNotifyGive(xTaskAcquire); // Notify acquire task that new data is available
-		} else
-			ESP_LOGE(TAG, "sensor reading failed");
+        }
+        else
+            ESP_LOGE(TAG, "sensor reading failed");
 
         portENTER_CRITICAL(&xDATAMutex);
         bool landed = (data_g.status & LANDED);
