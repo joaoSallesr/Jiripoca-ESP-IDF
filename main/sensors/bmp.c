@@ -7,6 +7,7 @@ static const char *TAG = "BMP390";
 
 // -K/m, L: average lapse rate
 static const float medium_lapse_rate = 0.0065f;
+static const float hypsometric_constant = 29.271247f; // specific dry air constant/gravity
 
 // R: universal gas constant, g: gravitational acceleration, M: dry air molar mass
 static const float exponent = 0.1902665f;      // -R*L/g*M
@@ -19,12 +20,22 @@ static float sea_pressure = 0.0f;
 static float sea_temp = 0.0f;
 static float initial_temp = 0.0f;
 
-static float get_altitude_from_pressure(const float pressure)
+static float get_barometric_altitude(const float pressure)
 {
     float check_sea_pressure = (sea_pressure == 0) ? standard_sea_pressure : sea_pressure;
     float check_sea_temp = (sea_temp == 0) ? standard_sea_temp : sea_temp;
 
     float alt = (check_sea_temp / medium_lapse_rate) * (1 - powf(pressure / check_sea_pressure, exponent));
+    return alt;
+}
+
+static float get_hypsometric_altitude(const float pressure, const float temperature)
+{
+    float check_sea_pressure = (sea_pressure == 0) ? standard_sea_pressure : sea_pressure;
+    float check_sea_temp = (sea_temp == 0) ? standard_sea_temp : sea_temp;
+    float mean_temperature = (temperature + check_sea_temp) / 2;
+
+    float alt = hypsometric_constant * mean_temperature * log(check_sea_pressure / pressure);
     return alt;
 }
 
@@ -36,9 +47,9 @@ static void bmp_init(bmp390_handle_t *bmp_hdl)
         .i2c_clock_speed = I2C_SPEED,
         .power_mode = BMP390_POWER_MODE_NORMAL,
         .iir_filter = BMP390_IIR_FILTER_3,
-        .pressure_oversampling = BMP390_PRESSURE_OVERSAMPLING_2X,
-        .temperature_oversampling   = BMP390_TEMPERATURE_OVERSAMPLING_SKIPPED,
-        .output_data_rate = BMP390_ODR_10MS,
+        .pressure_oversampling = BMP390_PRESSURE_OVERSAMPLING_4X,
+        .temperature_oversampling = BMP390_TEMPERATURE_OVERSAMPLING_SKIPPED,
+        .output_data_rate = BMP390_ODR_20MS,
     };
 
     xSemaphoreTake(xI2CMutex, portMAX_DELAY);
@@ -56,14 +67,14 @@ void bmp_task(void *pvParameters)
     bmp390_sample_t sample;
     static float initial_alt = 0.0f;
 
-    // calibration samples 
+    // calibration samples
     float pressure_sum = 0.0f;
     float alt_sum = 0.0f;
     uint8_t pressure_samples = 0;
     uint8_t alt_samples = 0;
 
     // wait for a valid ICM temperature (pode ser trocado futuramente por um xEventGroupWaitBits)
-    while (initial_temp == 0)
+    /*while (initial_temp == 0)
     {
         icm20948_sample_t icm_sample;
         portENTER_CRITICAL(&xICMMutex);
@@ -72,23 +83,25 @@ void bmp_task(void *pvParameters)
         initial_temp = icm_sample.initial_temperature;
         if (initial_temp == 0)
             vTaskDelay(pdMS_TO_TICKS(10));
-    }
+    }*/
 
     // get sea level temperature using KNOWN_ALTITUDE
-    sea_temp = initial_temp + 273.15f + (medium_lapse_rate * KNOWN_ALTITUDE);
+    // sea_temp = initial_temp + 273.15f + (medium_lapse_rate * KNOWN_ALTITUDE);
 
     while (true)
     {
-        float temp_not_used;
-
         xSemaphoreTake(xI2CMutex, portMAX_DELAY);
-        esp_err_t err = bmp390_get_measurements(bmp_hdl, &temp_not_used, &sample.pressure);
+        esp_err_t err = bmp390_get_measurements(bmp_hdl, &sample.temperature, &sample.pressure);
         xSemaphoreGive(xI2CMutex);
         if (err != ESP_OK)
         {
             ESP_LOGE(TAG, "get measurements failed: %s", esp_err_to_name(err));
             continue;
         }
+
+        // get sea level temperature
+        if (sea_temp == 0)
+            sea_temp = sample.temperature + 273.15f + (medium_lapse_rate * KNOWN_ALTITUDE);
 
         // calibrate sea level pressure
         if (pressure_samples < CALIBRATION_SAMPLES)
@@ -109,7 +122,8 @@ void bmp_task(void *pvParameters)
         }
 
         // get altitude
-        float alt = get_altitude_from_pressure(sample.pressure);
+        //float alt = get_barometric_altitude(sample.pressure);
+        float alt = get_hypsometric_altitude(sample.pressure, sample.temperature);
 
         // calibrate initial altitude
         if (alt_samples < CALIBRATION_SAMPLES)
@@ -127,6 +141,7 @@ void bmp_task(void *pvParameters)
         // update global BMP sample
         portENTER_CRITICAL(&xBMPMutex);
         bmp_sample_g.pressure = sample.pressure;
+        bmp_sample_g.temperature = sample.temperature;
         bmp_sample_g.altitude = alt;
         bmp_sample_g.initial_altitude = initial_alt;
         portEXIT_CRITICAL(&xBMPMutex);

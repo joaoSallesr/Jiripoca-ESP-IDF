@@ -152,6 +152,7 @@ typedef struct
 {
     float altitude; // @SEND (m)
     float pressure; // @SAVE (Pa)
+    float temperature; // @SAVE (°C)
     float initial_altitude; // @INTERNAL (m)
 } bmp390_sample_t;
 

@@ -116,24 +116,24 @@ typedef enum bmp390_power_modes_e {
  * @brief BMP390 pressure oversampling enumerator.
  */
 typedef enum bmp390_pressure_oversampling_e {
-    BMP390_PRESSURE_OVERSAMPLING_SKIPPED        = (0b000),  //!< skipped, no measurement, output set to 0x80000
-    BMP390_PRESSURE_OVERSAMPLING_2X             = (0b001),  //!< ultra low power
-    BMP390_PRESSURE_OVERSAMPLING_4X             = (0b010),  //!< low power
-    BMP390_PRESSURE_OVERSAMPLING_8X             = (0b011),  //!< standard
-    BMP390_PRESSURE_OVERSAMPLING_16X            = (0b100),  //!< high resolution
-    BMP390_PRESSURE_OVERSAMPLING_32X            = (0b101)   //!< ultra high resolution
+    BMP390_PRESSURE_OVERSAMPLING_SKIPPED        = (0b000),  //!< ultra low power - skipped, no measurement, output set to 0x80000
+    BMP390_PRESSURE_OVERSAMPLING_2X             = (0b001),  //!< low power
+    BMP390_PRESSURE_OVERSAMPLING_4X             = (0b010),  //!< standard
+    BMP390_PRESSURE_OVERSAMPLING_8X             = (0b011),  //!< high resolution
+    BMP390_PRESSURE_OVERSAMPLING_16X            = (0b100),  //!< ultra high resolution
+    BMP390_PRESSURE_OVERSAMPLING_32X            = (0b101)   //!< highest resolution
 } bmp390_pressure_oversampling_t;
 
 /**
  * @brief BMP390 temperature oversampling enumerator.
  */
 typedef enum bmp390_temperature_oversampling_e {
-    BMP390_TEMPERATURE_OVERSAMPLING_SKIPPED     = (0b000),  //!< skipped, no measurement, output set to 0x80000
-    BMP390_TEMPERATURE_OVERSAMPLING_2X          = (0b001),  //!< ultra low power
-    BMP390_TEMPERATURE_OVERSAMPLING_4X          = (0b010),  //!< low power
-    BMP390_TEMPERATURE_OVERSAMPLING_8X          = (0b011),  //!< standard
-    BMP390_TEMPERATURE_OVERSAMPLING_16X         = (0b100),  //!< high resolution
-    BMP390_TEMPERATURE_OVERSAMPLING_32X         = (0b101),  //!< ultra high resolution
+    BMP390_TEMPERATURE_OVERSAMPLING_SKIPPED     = (0b000),  //!< ultra low power - skipped, no measurement, output set to 0x80000
+    BMP390_TEMPERATURE_OVERSAMPLING_2X          = (0b001),  //!< low power
+    BMP390_TEMPERATURE_OVERSAMPLING_4X          = (0b010),  //!< standard
+    BMP390_TEMPERATURE_OVERSAMPLING_8X          = (0b011),  //!< high resolution
+    BMP390_TEMPERATURE_OVERSAMPLING_16X         = (0b100),  //!< ultra high resolution
+    BMP390_TEMPERATURE_OVERSAMPLING_32X         = (0b101),  //!< highest resolution
 } bmp390_temperature_oversampling_t;
 
 /**
