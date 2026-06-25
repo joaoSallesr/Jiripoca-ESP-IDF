@@ -1,10 +1,8 @@
-idf_component_register(
-                SRCS 
-                "sources/main.c"
-                "sources/acquire.c"
-                "sources/save_send.c"
-                "sources/common.c"
-                INCLUDE_DIRS 
-                "."
-                "headers"
-)
+idf_component_register(SRCS "main.c"
+                            "sensors/gps.c"
+                            "sensors/bmp.c"
+                            "sensors/icm.c"
+                            "header.c"
+                            "acquire.c"
+                            "save_send.c"
+                        INCLUDE_DIRS ".")
