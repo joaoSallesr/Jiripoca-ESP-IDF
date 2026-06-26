@@ -1,7 +1,9 @@
 idf_component_register(SRCS main.c
                             global.c
                             acquire.c
-                            save_send.c
+                            save.c
+                            send.c
+                            system.c
                             sensors/adc.c
                             sensors/bmp.c
                             sensors/gps.c

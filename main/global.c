@@ -10,14 +10,17 @@ file_counter_t    file_counter_g    = {0};
 atomic_bool       lfs_full          = ATOMIC_VAR_INIT(false);
 
 /* QUEUE HANDLE*/
+QueueHandle_t xEventQueue    = NULL;
 QueueHandle_t xSDQueue       = NULL;
 QueueHandle_t xLittleFSQueue = NULL;
 QueueHandle_t xLoraQueue     = NULL;
 QueueHandle_t xB4LaunchQueue = NULL;
 
-/* MUTEX */
-SemaphoreHandle_t xI2CMutex = NULL;
+/* SEMAPHORE */
+SemaphoreHandle_t xI2CSem     = NULL;
+SemaphoreHandle_t xLoraAuxSem = NULL;
 
+/* MUTEX */
 portMUX_TYPE xDATAMutex = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE xBMPMutex  = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE xGPSMutex  = portMUX_INITIALIZER_UNLOCKED;
@@ -25,8 +28,10 @@ portMUX_TYPE xICMMutex  = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE xADCMutex  = portMUX_INITIALIZER_UNLOCKED;
 
 /* EVENT HANDLE */
-EventGroupHandle_t xNVSCounterEvent = NULL;
-EventGroupHandle_t xFormatEvent     = NULL;
+EventGroupHandle_t xStatusEventGroup     = NULL;
+EventGroupHandle_t xInitEventGroup       = NULL;
+EventGroupHandle_t xNVSCounterEventGroup = NULL;
+EventGroupHandle_t xFormatEventGroup     = NULL;
 
 /* TASK HANDLE */
 TaskHandle_t xTaskLora    = NULL;

@@ -90,14 +90,6 @@
 #define MAX_FLASH_SIZE_USED 0.9 // Maximum percentage of flash to be used by littlefs
 #define FILENAME_LENGTH     32
 
-#define SD_QUEUE_SIZE       80
-#define LITTLEFS_QUEUE_SIZE 80
-#define LORA_QUEUE_SIZE     1   // Overwrite queue
-#define B4LAUNCH_QUEUE_SIZE 650 // Max of 13 samples/s: 650 =~ 5s of flight data
-
-#define EVT_SD_DONE  BIT0
-#define EVT_LFS_DONE BIT1
-
 #define BMP390_I2C_ADDRESS   (0x77)
 #define ICM20948_I2C_ADDRESS (0x68)
 
@@ -105,14 +97,36 @@
 #define BMP_SAMPLE_RATE_MS 50    // 20Hz
 #define GPS_SAMPLE_RATE_MS 200   // 5Hz, M8N GPS & GLONASS
 
-// Status flags
-#define ARMED           (1 << 0)
-#define BOOST           (1 << 1)
-#define COAST           (1 << 2)
-#define DROGUE_DEPLOYED (1 << 3)
-#define MAIN_DEPLOYED   (1 << 4)
-#define LANDING         (1 << 5)
-#define LANDED          (1 << 6)
+/* STATUS FLAGS */
+#define TASK_INIT       BIT(0)
+#define SETUP_OK        BIT(1)
+#define FATAL_ERROR     BIT(2)
+#define ARMED           BIT(3)
+#define BOOST           BIT(4)
+#define COAST           BIT(5)
+#define DROGUE_DEPLOYED BIT(6)
+#define MAIN_DEPLOYED   BIT(7)
+#define LANDING         BIT(8)
+#define LANDED          BIT(9)
+#define NVS_EDIT        BIT(10)
+
+/* INIT FLAGS */
+#define BMP_INIT  BIT(0)
+#define MS_INIT   BIT(1)
+#define LSM_INIT  BIT(2)
+#define BMM_INIT  BIT(3)
+#define HX_INIT   BIT(4)
+#define SD_INIT   BIT(5)
+#define LFS_INIT  BIT(6)
+#define LORA_INIT BIT(7)
+#define GPS_INIT  BIT(8)
+
+#define SETUP_INIT (BMP_INIT | MS_INIT | LSM_INIT | BMM_INIT | HX_INIT | SD_INIT | LFS_INIT | LORA_INIT | GPS_INIT)
+
+/* SAVE FLAGS */
+#define EVT_SD_DONE  BIT(0)
+#define EVT_LFS_DONE BIT(1)
+#define EVT_NVS_DONE BIT(2)
 
 #define THRESHOLD_MS 150 // Time threshold for state transitions in ms (e.g. boost to coast, deploy drogue, etc.)
 #define PREPARE_FOR_LANDING_S                                                                                          \
@@ -221,9 +235,17 @@ typedef struct __attribute__((packed)) {
     uint8_t  fix;
 } send_t;
 
-/* Data structure to store file counter */
-typedef struct {
-    int32_t file_numSD;
-    int32_t file_numLFS;
-    bool    format;
+/* SYSTEM STRUCTURES */
+typedef struct __attribute__((packed)) {
+    uint32_t sd_files;
+    uint32_t lfs_files;
+    bool     format;
 } file_counter_t;
+
+/* EVENT STRUCTURES */
+typedef enum __attribute__((packed)) {
+    EVT_INIT_READY,   // task_status finished peripheral setup
+    EVT_SETUP_OK,     // system tasks initialized correctly
+    EVT_SETUP_FAILED, // system initialization failed
+    EVT_ARM,          // system armed
+} status_event_t;

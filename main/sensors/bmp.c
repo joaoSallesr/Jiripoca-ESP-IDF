@@ -41,9 +41,9 @@ static void bmp_init(bmp390_handle_t *bmp_hdl) {
     // bmp_cfg.i2c_clock_speed = I2C_SPEED;
     // bmp_cfg.iir_filter = BMP390_IIR_FILTER_1;
 
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ESP_ERROR_CHECK(bmp390_init(bus_handle, &bmp_cfg, bmp_hdl));
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
 
     ESP_LOGI(TAG, "BMP390 initialized");
     vTaskDelay(pdMS_TO_TICKS(100)); // wait for parameter changes ((1 + IIR_COEFF) * T_OS + 2.5 ms ?)
@@ -56,7 +56,7 @@ static void bmp_init(bmp390_handle_t *bmp_hdl) {
     bmp390_interrupt_control_register_t interrupt_ctrl_reg;
 
     // Set power mode manually
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ESP_ERROR_CHECK(bmp390_set_power_mode(*bmp_hdl, bmp_cfg.power_mode));
     // Attempt to read registers
     bmp390_get_configuration_register(*bmp_hdl, &config_reg);
@@ -64,7 +64,7 @@ static void bmp_init(bmp390_handle_t *bmp_hdl) {
     bmp390_get_power_control_register(*bmp_hdl, &power_ctrl_reg);
     bmp390_get_output_data_rate_register(*bmp_hdl, &output_data_rate_reg);
     bmp390_get_interrupt_control_register(*bmp_hdl, &interrupt_ctrl_reg);
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
 
     ESP_LOGD(TAG, "Configuration (0x%02x): %s", config_reg.reg, uint8_to_binary(config_reg.reg));
     ESP_LOGD(TAG, "Oversampling  (0x%02x): %s", oversampling_reg.reg, uint8_to_binary(oversampling_reg.reg));
@@ -90,9 +90,9 @@ void task_bmp(void *pvParameters) {
     while (true) {
         float temperature;
 
-        xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+        xSemaphoreTake(xI2CSem, portMAX_DELAY);
         esp_err_t err = bmp390_get_measurements(bmp_hdl, &temperature, &sample.pressure);
-        xSemaphoreGive(xI2CMutex);
+        xSemaphoreGive(xI2CSem);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Get measurements failed: %s", esp_err_to_name(err));
             vTaskDelay(pdMS_TO_TICKS(BMP_SAMPLE_RATE_MS));
@@ -136,8 +136,8 @@ void task_bmp(void *pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(BMP_SAMPLE_RATE_MS));
     }
 
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     bmp390_delete(bmp_hdl);
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
     vTaskDelete(NULL);
 }
