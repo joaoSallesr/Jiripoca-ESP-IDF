@@ -1,249 +1,299 @@
 #include "header.h"
 
 static const char *TAG_ACQ = "ACQUIRE";
+static const char *TAG_DEPLOY = "DEPLOY";
 
-void adc_init(adc_oneshot_unit_handle_t *adc_unit_handle, adc_cali_handle_t *adc_cali_handle) {
-    adc_oneshot_unit_init_cfg_t unit_config = {
-        .unit_id = ADC_UNIT_1,
-        .ulp_mode = ADC_ULP_MODE_DISABLE
-    };
-    adc_oneshot_new_unit(&unit_config, adc_unit_handle);
+#define sACC_THRESHOLD 0.5f // Threshold for GPS sAcc above which xR is scaled up in eskf_update_gps
 
-    // Configure the ADC channel
-    adc_oneshot_chan_cfg_t channel_config = {
-        .atten = ADC_ATTEN_DB_12,             
-        .bitwidth = ADC_BITWIDTH_DEFAULT
-    };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(*adc_unit_handle, ADC_CHANNEL_4, &channel_config));
+#define HIGH 1
+#define LOW 0
 
-    // Configure calibration (raw ADC value in mV)
-    adc_cali_curve_fitting_config_t cali_config = {
-        .unit_id = ADC_UNIT_1,
-        .chan = ADC_CHANNEL_4,
-        .atten = ADC_ATTEN_DB_12,
-        .bitwidth = ADC_BITWIDTH_DEFAULT
-    };
-    ESP_ERROR_CHECK(adc_cali_create_scheme_curve_fitting(&cali_config, adc_cali_handle));
-}
-
-float read_battery_voltage(adc_oneshot_unit_handle_t adc_unit_handle, adc_cali_handle_t adc_cali_handle) {
-    int raw;
-    ESP_ERROR_CHECK(adc_oneshot_read(adc_unit_handle, ADC_CHANNEL_4, &raw));
-
-    int voltage_mv;
-    ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc_cali_handle, raw, &voltage_mv));
-
-    // Calculate actual battery voltage based on voltage divider ratio
-    float battery_voltage = (voltage_mv / 1000.0f) * ((R1 + R2) / R2); // Convert mV to V and apply divider ratio
-    // (R1 + R2) / R2 = 1.5 for R1=10k and R2=20k
-    return battery_voltage;
-}
-
-void status_checks(data_t *data)
+// Contains logic for state transitions and deployments
+void status_check(data_t *data)
 {
-    // Check if altitude is higher than KNOWN_ALTITUDE + FLYING_THRESHOLD
-    if (!(data->status & FLYING))
+    // ===================== SAFE MODE =====================
+    if ((data->status & ARMED) && !(data->status & BOOST) && gpio_get_level(RBF_GPIO) == LOW)
     {
-        if (fabs(data->bmp_altitude) > KNOWN_ALTITUDE + FLYING_THRESHOLD)
+        portENTER_CRITICAL(&xDATAMutex);
+        data_g.status &= ~(ARMED);
+        portEXIT_CRITICAL(&xDATAMutex);
+        
+        ESP_LOGW(TAG_ACQ, "Disarming system");
+        gpio_set_level(LED_GPIO, HIGH);
+        gpio_set_level(BUZZER_GPIO, HIGH);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        gpio_set_level(LED_GPIO, LOW);
+        gpio_set_level(BUZZER_GPIO, LOW);
+    }
+    
+    // ===================== ARMED =====================
+    else if (!(data->status & ARMED) && gpio_get_level(RBF_GPIO) == HIGH)
+    {
+        portENTER_CRITICAL(&xDATAMutex);
+        data_g.status |= ARMED;
+        portEXIT_CRITICAL(&xDATAMutex);
+
+        ESP_LOGW(TAG_ACQ, "System ARMED");
+        for (uint8_t i = 0; i < 3; i++)
         {
-            xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-            STATUS |= FLYING;
-            xSemaphoreGive(xStatusMutex);
+            gpio_set_level(LED_GPIO, HIGH);
+            gpio_set_level(BUZZER_GPIO, HIGH);
+            vTaskDelay(pdMS_TO_TICKS(150));
+            gpio_set_level(LED_GPIO, LOW);
+            gpio_set_level(BUZZER_GPIO, LOW);
+            vTaskDelay(pdMS_TO_TICKS(150));
         }
     }
 
-    // Check if accel is lower than CUTOFF_THRESHOLD
-    if ((data->status & FLYING) && !(data->status & CUTOFF))
+    // ===================== BOOST =====================
+    if (!(data->status & BOOST))
     {
-        if (data->accel*0.1 < CUTOFF_THRESHOLD)
+        static uint32_t t_boost = 0;
+        // Vertical acceleration greater then threshold and positive vertical velocity
+        if (data->icm.az > BOOST_THRESHOLD_A && data->kf.x.vz > 0.0f)
         {
-            xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-            STATUS |= CUTOFF;
-            xSemaphoreGive(xStatusMutex);
+            if (t_boost == 0)
+                t_boost = data->time;
+            // If condition holds, set BOOST flag
+            if ((data->time - t_boost) > THRESHOLD_MS)
+                data->status |= BOOST;
         }
+        else
+            t_boost = 0;
+        return;
     }
 
-    // Check if landed by comparing altitude to altitude 5 seconds ago
-    if ((data->status & FLYING) && !(data->status & LANDED))
+    // ===================== COAST =====================
+    if ((data->status & BOOST) && !(data->status & COAST))
     {
-        static float aux_altitude = 0;
-        static int64_t aux_time = 0;
-        if (esp_timer_get_time() - aux_time > 5000000) // If 5 seconds have passed since last check
+        static uint32_t t_coast = 0;
+        // Vertical acceleration less than threshold
+        if (data->icm.az < COAST_THRESHOLD_A)
         {
-            if (aux_time == 0) // If first time checking, set aux_time and aux_altitude
+            if (t_coast == 0)
+                t_coast = data->time;
+            // If condition holds, set COAST flag
+            if ((data->time - t_coast) > THRESHOLD_MS)
+                data->status |= COAST;
+        }
+        else
+            t_coast = 0;
+        return;
+    }
+
+    // ===================== DROGUE DEPLOY =====================
+    if ((data->status & ARMED) && (data->status & COAST) && !(data->status & DROGUE_DEPLOYED))
+    {
+        static uint32_t t_apogee = 0;
+        // Absolute vertical velocity is less than threshold (near apogee)
+        if (fabsf(data->kf.x.vz) < DROGUE_THRESHOLD_V)
+        {
+            if (t_apogee == 0)
+                t_apogee = data->time;
+            // If condition holds and altitude is less than apogee, set deploy drogue
+            if ((data->time - t_apogee) > THRESHOLD_MS && data->kf.x.h < data->kf.x.apogee)
             {
-                aux_time = esp_timer_get_time();
-                aux_altitude = data->bmp_altitude;
+                data->status |= DROGUE_DEPLOYED;
+                gpio_set_level(DROGUE_GPIO, HIGH);
+                ESP_LOGW(TAG_DEPLOY, "Drogue deployed");
+                vTaskDelay(pdMS_TO_TICKS(500));
+                gpio_set_level(DROGUE_GPIO, LOW);
             }
-            else if (fabs(data->bmp_altitude - aux_altitude) < LANDED_THRESHOLD) // If altitude has not changed more than LANDED_THRESHOLD, consider landed
-            {
-                xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-                STATUS |= LANDED;
-                xSemaphoreGive(xStatusMutex);
-            }
-            else // If altitude has changed more than LANDED_THRESHOLD, update aux_time and aux_altitude
-            {
-                aux_time = esp_timer_get_time();
-                aux_altitude = data->bmp_altitude;
-            }
+        }
+        else
+            t_apogee = 0;
+        return;
+    }
+
+    // ===================== MAIN DEPLOY =====================
+    if ((data->status & DROGUE_DEPLOYED) && !(data->status & MAIN_DEPLOYED))
+    {
+        // Deploy main if altitude is less than MAIN_ALTITUDE and vertical velocity is negative (descending)
+        if (data->kf.x.h < MAIN_ALTITUDE && data->kf.x.vz < 0)
+        {
+            data->status |= MAIN_DEPLOYED;
+            gpio_set_level(MAIN_GPIO, HIGH);
+            ESP_LOGW(TAG_DEPLOY, "Main deployed");
+            vTaskDelay(pdMS_TO_TICKS(500));
+            gpio_set_level(MAIN_GPIO, LOW);
+        }
+        return;
+    }
+
+    // ===================== LANDING =====================
+    if ((data->status & MAIN_DEPLOYED) && !(data->status & LANDING))
+    {
+        static uint32_t t_landing = 0;
+        // Time to impact is less than PREPARE_FOR_LANDING_S seconds (h/vz) and descending
+        if (data->kf.x.h / -data->kf.x.vz < PREPARE_FOR_LANDING_S)
+        {
+            if (t_landing == 0)
+                t_landing = data->time;
+            // If condition holds, set LANDING flag
+            if ((data->time - t_landing) > THRESHOLD_MS)
+                data->status |= LANDING;
+            else
+                t_landing = 0;
+        }
+        return;
+    }
+
+    // ===================== LANDED =====================
+    if (data->status & LANDING && !(data->status & LANDED))
+    {
+        static uint32_t t_landed = 0;
+        // Absolute vertical velocity and acceleration are near zero
+        if (fabsf(data->kf.x.vz) < 0.5f && data->icm.accel < 1.0f)
+        {
+            if (t_landed == 0)
+                t_landed = data->time;
+            // If condition holds, set LANDED flag
+            if ((data->time - t_landed) > 10*THRESHOLD_MS)
+                data->status |= LANDED;
+            else
+                t_landed = 0;
         }
     }
 }
 
-// send_queues sends data to queues
-void send_queues(data_t *data)
+static void pack_save_data(const data_t *data, save_t *save_data)
 {
-    if (!(data->status & LANDED)) // If not landed, send to queues
+    save_data->time = data->time;
+    save_data->pressure = data->bmp.pressure;
+    save_data->latitude = data->gps.latitude;
+    save_data->longitude = data->gps.longitude;
+    save_data->gps_altitude = data->gps.altitude;
+    save_data->gps_vel_vertical = data->gps.vel_vertical;
+    save_data->sAcc = data->gps.sAcc;
+    save_data->fix = data->gps.fix;
+    save_data->accel_x = data->icm.accel_x;
+    save_data->accel_y = data->icm.accel_y;
+    save_data->accel_z = data->icm.accel_z;
+    save_data->gyro_x = data->icm.gyro_x;
+    save_data->gyro_y = data->icm.gyro_y;
+    save_data->gyro_z = data->icm.gyro_z;
+    save_data->mag_x = data->icm.mag_x;
+    save_data->mag_y = data->icm.mag_y;
+    save_data->mag_z = data->icm.mag_z;
+    save_data->status = data->status;
+    save_data->voltage = data->voltage;
+}
+
+static void pack_send_data(const data_t *data, send_t *send_data)
+{
+    send_data->time = data->time;
+    send_data->latitude = data->gps.latitude;
+    send_data->longitude = data->gps.longitude;
+    send_data->fix = data->gps.fix;
+    send_data->q1 = data->icm.q1;
+    send_data->q2 = data->icm.q2;
+    send_data->q3 = data->icm.q3;
+    send_data->q4 = data->icm.q4;
+    send_data->kf_altitude = data->kf.x.h;
+    send_data->kf_vel_vertical = data->kf.x.vz;
+    send_data->kf_apogee = data->kf.x.apogee;
+    send_data->accel = data->icm.accel;
+    send_data->status = data->status;
+    send_data->voltage = data->voltage;
+}
+
+// Sends data to SD card, LittleFS and LoRa queues
+void send_queues(const data_t *data)
+{
+    if (!(data->status & BOOST)) // If in idle state, do not save data to save resources
     {
-        if ((data->status & ARMED)) // If armed, send to task_deploy
-            xQueueSend(xAltQueue, &data->bmp_altitude, 0);
-        data_t save_data;
-        save_struct(data, &save_data);
-        xQueueSend(xSDQueue, &save_data, 0);  // Send to SD card queue
-        if (!(data->status & LFS_FULL)) // If LittleFS is not full, send to LittleFS queue
+        save_t save_data;
+        pack_save_data(data, &save_data);
+        xQueueSend(xB4LaunchQueue, &save_data, 0); // This queue will be only saved at landing
+    }
+    else if (!(data->status & LANDING)) // If not approaching ground
+    {
+        save_t save_data;
+        pack_save_data(data, &save_data);
+        
+        xQueueSend(xSDQueue, &save_data, 0); // Send to SD card queue
+        if (!atomic_load_explicit(&lfs_full, memory_order_relaxed)) // If LittleFS is not full, send to LittleFS queue
             xQueueSend(xLittleFSQueue, &save_data, 0);
     }
-
-    static int n = 0;
-    if (n++ % 10 == 0) // This affects the frequency of the LoRa messages
-    {
-        data_t send_data;
-        data->kf_altitude = altitude_get_alt();
-        data->kf_vel_vertical = altitude_get_vel();
-        send_struct(data, &send_data);
-        xQueueSend(xLoraQueue, &send_data, 0); // Send to LoRa queue
-    }
-
-    ESP_LOGI(TAG_ACQ, "Data sent to queues");
+    send_t send_data;
+    pack_send_data(data, &send_data);
+    xQueueOverwrite(xLoraQueue, &send_data); // Send to LoRa queue (length 1)
 }
 
 void task_acquire(void *pvParameters)
 {
-    xI2CMutex = xSemaphoreCreateMutex();
-    data_t data = {0};
-
-    // ADC Initialization
-    adc_oneshot_unit_handle_t adc_unit_handle;
-    adc_cali_handle_t adc_cali_handle;
-    adc_init(&adc_unit_handle, &adc_cali_handle);
-
-    ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config));
-    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, GPS_BUFF_SIZE, 0, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, UART_PIN_NO_CHANGE, GPS_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    uint8_t buffer[GPS_BUFF_SIZE];
-
-    ESP_ERROR_CHECK(bmp_init());
-    ESP_ERROR_CHECK(icm_init());
-
-    // Initialise algorithms
-	FusionOffset offset;
-	FusionAhrs ahrs;
-
-	FusionOffsetInitialise(&offset, FUSION_SAMPLE_RATE);
-	FusionAhrsInitialise(&ahrs);
-
-	// Set AHRS algorithm settings
-    const FusionAhrsSettings settings = {
-        .convention = FusionConventionNed,
-        .gain = 0.5f,
-        .gyroscopeRange = 500.0f, /* replace this with actual gyroscope range in degrees/s */
-        .accelerationRejection = 10.0f,
-        .magneticRejection = 10.0f,
-        .recoveryTriggerPeriod = 5 * FUSION_SAMPLE_RATE, /* 5 seconds */
-	};
-	FusionAhrsSetSettings(&ahrs, &settings);
-    icm20948_agmt_t agmt;
-    TickType_t xLastWakeTime = 0;
-    const TickType_t xFrequency = pdMS_TO_TICKS(1000/FUSION_SAMPLE_RATE);
-
+    uint32_t notifiedValue;
     while (true)
     {
-        // Time and status update
-        if (utc_time != 0) {
-            data.time = (uint32_t)(utc_time);
-            utc_time = 0;
+        // Wait for notification from reading tasks
+        xTaskNotifyWait(
+            0,                // don't clear any bits on entry
+            UINT32_MAX,       // clear all bits on exit
+            &notifiedValue, portMAX_DELAY);
+        
+        data_t data;
+
+        portENTER_CRITICAL(&xDATAMutex);
+        data = data_g;
+        portEXIT_CRITICAL(&xDATAMutex);
+
+        portENTER_CRITICAL(&xBMPMutex);
+        data.bmp = bmp_sample_g;
+        portEXIT_CRITICAL(&xBMPMutex);
+
+        portENTER_CRITICAL(&xICMMutex);
+        data.icm = icm_sample_g;
+        portEXIT_CRITICAL(&xICMMutex);
+
+        portENTER_CRITICAL(&xGPSMutex);
+        data.gps = gps_sample_g;
+        portEXIT_CRITICAL(&xGPSMutex);
+
+        portENTER_CRITICAL(&xADCMutex);
+        data.voltage = battery_voltage_g;
+        portEXIT_CRITICAL(&xADCMutex);
+        
+        // Update time
+        if (data.gps.utc_time > 1) // Register GPS time only once, if available (not 0 and not 1) 
+        {
+            data.time = (uint32_t)(data.gps.utc_time);
+            portENTER_CRITICAL(&xGPSMutex);
+            gps_sample_g.utc_time = 1; // Set to 1 to indicate GPS time has been registered
+            portEXIT_CRITICAL(&xGPSMutex);
         }
-        else data.time = (uint32_t)(esp_timer_get_time() * 0.001);
-        xSemaphoreTake(xStatusMutex, portMAX_DELAY);
-        data.status = STATUS;
-        xSemaphoreGive(xStatusMutex);
+        else
+            data.time = (uint32_t)(esp_timer_get_time() / 1000UL); // ms since boot
 
-        // Battery voltage
-        data.voltage = read_battery_voltage(adc_unit_handle, adc_cali_handle);
+        status_check(&data); // Status check and update
 
-        gps_task(&data, buffer);
-        bmp_task(&data);
-        xLastWakeTime = xTaskGetTickCount();
-        xTaskDelayUntil(&xLastWakeTime, xFrequency);
-        fusion_task(&data, &offset, &ahrs, &agmt);
-
-        status_checks(&data);
-
-        // Print data
-        ESP_LOGI(TAG_ACQ, "\tTime: %lu, \tStatus: %d V: %u\r\n"
-                          "\tBMP\t\tP: %.2f, T: %u, A: %.2f\r\n"
-                          "\tAccel\t\tX: %d, Y: %d, Z: %d\r\n"
-                          "\tGyro\t\tX: %d, Y: %d, Z: %d\r\n"
-                          "\tMag\t\tX: %d, Y: %d, Z: %d\r\n"
-                          "\tGPS\t\tLat: %.5f, Lon: %.5f, Alt: %.2f, DVel: %.2f\r\n"
-                          "\tTotal Accel\t\tG: %d\r\n"
-                          "\tOrientation\t\tQ1: %.5f, Q2: %.5f, Q3: %.5f, Q4: %.5f\r\n"
-                          "\tKalman\t\talt: %.2f, DVel: %.2f\n"
-                          "----------------------------------------",
-                data.time, data.status, data.voltage,
-                data.pressure, data.temperature, data.bmp_altitude,
-                data.accel_x, data.accel_y, data.accel_z,
-                data.gyro_x, data.gyro_y, data.gyro_z,
-                data.mag_x, data.mag_y, data.mag_z,
-                data.latitude, data.longitude, data.gps_altitude, data.gps_vel_vertical,
-                data.accel,
-                data.orientation_q1, data.orientation_q2, data.orientation_q3, data.orientation_q4,
-                data.kf_altitude, data.kf_vel_vertical);
-        send_queues(&data);
-
-        // REDUCE AFTER OPTIMIZING CODE
-        vTaskDelay(pdMS_TO_TICKS(10));
+        switch (notifiedValue)
+        { 
+            case ICM_BIT:
+                // Trust accelerometer less due to vibration if in boost phase
+                float xQ = data.status & BOOST ? 25.0f : 1.0f;
+                eskf_predict(&data.kf, data.icm.az, xQ);
+                break;
+            case BMP_BIT:
+                if (!eskf_update_bar(&data.kf, data.bmp.altitude, 1.0f))
+                    ESP_LOGW(TAG_ACQ, "kf_update_bar skipped");
+                break;
+            case GPS_BIT:
+                float sAcc = (float)data.gps.sAcc * 0.1f; // Convert back to m/s
+                // Trust GPS less if speed accuracy is greater than threshold (2+sAcc-sACC_THRESHOLD)²
+                float xR = (sAcc > sACC_THRESHOLD) ? (2.0f + sAcc - sACC_THRESHOLD) * (2.0f + sAcc - sACC_THRESHOLD): 1.0f;
+                if (!eskf_update_gps(&data.kf, data.gps.altitude, data.gps.vel_vertical, xR))
+                    ESP_LOGW(TAG_ACQ, "kf_update_gps skipped");
+                break;
+            case ADC_BIT:
+                break;
+            default:
+                ESP_LOGW(TAG_ACQ, "Unknown notification received: %s", uint32_to_binary(notifiedValue));
+        }
+        
+        send_queues(&data); // SD, littleFS and lora queues
+        
+        portENTER_CRITICAL(&xDATAMutex);
+        data_g = data; // Update global data with latest data
+        portEXIT_CRITICAL(&xDATAMutex);
     }
-    vTaskDelete(NULL);
-}
-
-void send_struct(const data_t *src, data_t *dst){
-    if (!src || !dst) return;
-    dst->time = src->time;
-    dst->status = src->status;
-    dst->voltage = src->voltage;
-    dst->latitude = src->latitude;
-    dst->longitude = src->longitude;
-    dst->gps_altitude = src->gps_altitude - gps_initial_alt; // relative to initial state
-    dst->gps_vel_vertical = src->gps_vel_vertical;
-    dst->bmp_altitude = src->bmp_altitude - bmp_initial_alt; // relative to initial state
-    dst->accel = src->accel;
-    dst->orientation_q1 = src->orientation_q1;
-    dst->orientation_q2 = src->orientation_q2;
-    dst->orientation_q3 = src->orientation_q3;
-    dst->orientation_q4 = src->orientation_q4;
-    dst->kf_altitude = src->kf_altitude;
-    dst->kf_vel_vertical = src->kf_vel_vertical;
-}
-
-void save_struct(const data_t *src, data_t *dst){
-    if (!src || !dst) return;
-    dst->time = src->time;
-    dst->status = src->status;
-    dst->voltage = src->voltage;
-    dst->latitude = src->latitude;
-    dst->longitude = src->longitude;
-    dst->gps_altitude = src->gps_altitude;
-    dst->gps_vel_vertical = src->gps_vel_vertical;
-    dst->pressure = src->pressure;
-    dst->temperature = src->temperature;
-    dst->accel_x = src->accel_x;
-    dst->accel_y = src->accel_y;
-    dst->accel_z = src->accel_z;
-    dst->gyro_x = src->gyro_x;
-    dst->gyro_y = src->gyro_y;
-    dst->gyro_z = src->gyro_z;
-    dst->mag_x = src->mag_x;
-    dst->mag_y = src->mag_y;
-    dst->mag_z = src->mag_z;
 }

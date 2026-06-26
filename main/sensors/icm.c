@@ -1,187 +1,201 @@
 #include "header.h"
 
-static const char *TAG_ICM = "ICM20948";
-static const char *TAG_FUSION = "FUSION";
+#define ICM_ERROR_CHECK(x)                                                                                             \
+    do {                                                                                                               \
+        icm20948_status_e err_rc_ = (x);                                                                               \
+        if (unlikely(err_rc_ != ICM_20948_STAT_OK)) {                                                                  \
+            _esp_error_check_failed(ESP_FAIL, __FILE__, __LINE__, __ASSERT_FUNC, #x);                                  \
+        }                                                                                                              \
+    } while (0)
 
-static const float gyro_scale = 1.0f/65.5f;
-static const float acc_scale = 1.0f/2048.0f;
-static const float mag_scale = 0.15f;
-static const float temp_scale = 1.0f/333.87f;
-static const float temp_offset = 14.0f;
+#define GYRO_SCALE_RAD GYRO_SCALE * 3.14159265359f / 180.0f // LSB to rad/s
+#define ACC_SCALE_MS2  ACC_SCALE *G                         // LSB to m/s²
 
-static icm20948_device_t icm_dev;
-static icm0948_config_i2c_t icm_config;
+static const char *TAG = "ICM20948";
 
-esp_err_t icm_init(void)
-{
-    i2c_master_dev_handle_t dev_handle = NULL;
+// Rotate sensor frame acceleration to world frame with gravity removed (ENU)
+static void rotateToWorld(float qw, float qx, float qy, float qz, float a_s[3], float a_w[3]) {
+    float R11 = 1 - 2 * qy * qy - 2 * qz * qz;
+    float R12 = 2 * qx * qy - 2 * qz * qw;
+    float R13 = 2 * qx * qz + 2 * qy * qw;
 
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(bus_handle, &dev_cfg, &dev_handle));
+    float R21 = 2 * qx * qy + 2 * qz * qw;
+    float R22 = 1 - 2 * qx * qx - 2 * qz * qz;
+    float R23 = 2 * qy * qz - 2 * qx * qw;
 
-    icm_config.i2c_dev = dev_handle;
-    icm_config.i2c_addr = dev_cfg.device_address;
+    float R31 = 2 * qx * qz - 2 * qy * qw;
+    float R32 = 2 * qy * qz + 2 * qx * qw;
+    float R33 = 1 - 2 * qx * qx - 2 * qy * qy;
 
-    bool icm_initialized = true;
-    /* setup icm20948 device */
-    icm20948_init_i2c(&icm_dev, &icm_config);
+    a_w[0] = R11 * a_s[0] + R12 * a_s[1] + R13 * a_s[2];
+    a_w[1] = R21 * a_s[0] + R22 * a_s[1] + R23 * a_s[2];
+    a_w[2] = R31 * a_s[0] + R32 * a_s[1] + R33 * a_s[2] - G;
+}
 
-    /* check ID */
-    while (icm20948_check_id(&icm_dev) != ICM_20948_STAT_OK)
-    {
-        ESP_LOGE(TAG_ICM, "check id failed");
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-    ESP_LOGI(TAG_ICM, "check id passed");
-    
+static void icm_init(icm20948_device_t *icm_dev) {
+    // ICM20948 struct setup
+    icm20948_config_i2c_t icm_config = {
+        .i2c_addr        = ICM20948_I2C_ADDRESS,
+        .i2c_clock_speed = I2C_SPEED,
+    };
+
+    // ICM20948 setup device
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    ICM_ERROR_CHECK(icm20948_init_i2c(bus_handle, &icm_config, icm_dev));
+    xSemaphoreGive(xI2CMutex);
+
+    ESP_LOGI(TAG, "ICM20948 initialized");
+
+    // Check ID
     icm20948_status_e stat;
-    
-    // Here we are doing a SW reset to make sure the device starts in a known state
-    stat = icm20948_sw_reset(&icm_dev);
-    if (stat != ESP_OK) {
-        ESP_LOGE(TAG_ICM, "reset failed");
-        icm_initialized = false;
+    for (int i = 0; i < 5; i++) // Retry 5 times
+    {
+        xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+        stat = icm20948_check_id(icm_dev);
+        xSemaphoreGive(xI2CMutex);
+        if (stat == ICM_20948_STAT_OK)
+            break;
+        ESP_LOGD(TAG, "ICM20948 ID check failed, retry %d/5", i + 1);
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
+    ICM_ERROR_CHECK(stat);
+
+    // SW reset to make sure the device starts in a known state
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    ICM_ERROR_CHECK(icm20948_sw_reset(icm_dev));
+    xSemaphoreGive(xI2CMutex);
     vTaskDelay(pdMS_TO_TICKS(250));
-    
+
     // Now wake the sensor up
-    stat = icm20948_sleep(&icm_dev, false);
-    if (stat != ESP_OK) {
-        ESP_LOGE(TAG_ICM, "wake up failed");
-        icm_initialized = false;
-    }
-    stat = icm20948_low_power(&icm_dev, false);
-    if (stat != ESP_OK) {
-        ESP_LOGE(TAG_ICM, "normal power failed");
-        icm_initialized = false;
-    }
-    
-    icm20948_internal_sensor_id_bm sensors = (icm20948_internal_sensor_id_bm)(ICM_20948_INTERNAL_ACC | ICM_20948_INTERNAL_GYR);
-    
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    ICM_ERROR_CHECK(icm20948_sleep(icm_dev, false));
+    ICM_ERROR_CHECK(icm20948_low_power(icm_dev, false));
+    xSemaphoreGive(xI2CMutex);
+
+    icm20948_internal_sensor_id_bm sensors =
+        (icm20948_internal_sensor_id_bm)(ICM_20948_INTERNAL_ACC | ICM_20948_INTERNAL_GYR);
+
     // Set Gyro and Accelerometer to a particular sample mode
-    // options: SAMPLE_MODE_CONTINUOUS. SAMPLE_MODE_CYCLED
-    stat = icm20948_set_sample_mode(&icm_dev, sensors, SAMPLE_MODE_CONTINUOUS); 
-    if (stat != ESP_OK) {
-        ESP_LOGE(TAG_ICM, "set sample mode failed");
-        icm_initialized = false;
-    }
-    
+    // options: SAMPLE_MODE_CONTINUOUS; SAMPLE_MODE_CYCLED
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    ICM_ERROR_CHECK(icm20948_set_sample_mode(icm_dev, sensors, SAMPLE_MODE_CONTINUOUS));
+    xSemaphoreGive(xI2CMutex);
+
     // Set up sensors sample rate
     icm20948_smplrt_t smplrt;
-    smplrt.a = 10;
-    smplrt.g = 10;
-    stat = icm20948_set_sample_rate(&icm_dev, sensors, smplrt);
-    if (stat != ESP_OK) {
-        ESP_LOGE(TAG_ICM, "set sample rate failed");
-        icm_initialized = false;
-    }
-    
+    smplrt.a = 4;
+    smplrt.g = 4; // ODR 225 Hz
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    ICM_ERROR_CHECK(icm20948_set_sample_rate(icm_dev, sensors, smplrt));
+    xSemaphoreGive(xI2CMutex);
+
     // Set full scale ranges for both acc and gyr
     icm20948_fss_t myfss;
     myfss.a = GPM_16;
     myfss.g = DPS_500;
-    stat = icm20948_set_full_scale(&icm_dev, sensors, myfss);
-    if (stat != ESP_OK) {
-        ESP_LOGE(TAG_ICM, "set scale failed");
-        icm_initialized = false;
-    }
-    
-    // Set up DLPF configuration
-    icm20948_dlpcfg_t myDLPcfg;
-    myDLPcfg.a = ACC_D111BW4_N136BW;
-    myDLPcfg.g = GYR_D119BW5_B154BW3;
-    stat = icm20948_set_dlpf_cfg(&icm_dev, sensors, myDLPcfg);
-    if (stat != ESP_OK) ESP_LOGE(TAG_ICM, "set DLPF failed");
-    
-    // Choose whether or not to use DLPF
-    stat = icm20948_enable_dlpf(&icm_dev, ICM_20948_INTERNAL_ACC, true);
-    if (stat != ESP_OK) ESP_LOGE(TAG_ICM, "accel DLPF failed");
-    stat = icm20948_enable_dlpf(&icm_dev, ICM_20948_INTERNAL_GYR, true);
-    if (stat != ESP_OK) ESP_LOGE(TAG_ICM, "gyro DLPF failed");
-    
-    stat = icm20948_init_magnetometer(&icm_dev);
-    if (stat != ESP_OK) ESP_LOGE(TAG_ICM, "mag init failed");
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    ICM_ERROR_CHECK(icm20948_set_full_scale(icm_dev, sensors, myfss));
+    xSemaphoreGive(xI2CMutex);
 
-    if (icm_initialized) return ESP_OK;
-    return ESP_FAIL;
+    // Set up Digital Low Pass Filter configuration
+    icm20948_dlpcfg_t myDLPcfg;
+    myDLPcfg.a = ACC_D23BW9_N34BW4;
+    myDLPcfg.g = GYR_D23BW9_N35BW9;
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    ICM_ERROR_CHECK(icm20948_set_dlpf_cfg(icm_dev, sensors, myDLPcfg));
+    xSemaphoreGive(xI2CMutex);
+
+    // Choose whether or not to use DLPF
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    ICM_ERROR_CHECK(icm20948_enable_dlpf(icm_dev, ICM_20948_INTERNAL_ACC, true));
+    ICM_ERROR_CHECK(icm20948_enable_dlpf(icm_dev, ICM_20948_INTERNAL_GYR, true));
+    xSemaphoreGive(xI2CMutex);
+
+    // Initialize magnetometer
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    ICM_ERROR_CHECK(icm20948_init_magnetometer(icm_dev));
+    xSemaphoreGive(xI2CMutex);
 }
 
-// void print_agmt(icm20948_agmt_t agmt)
-// {
-//   	ESP_LOGI("TAG_ICM", "Acc: [ %.5f, %.5f, %.5f ] Gyr: [ %.5f, %.5f, %.5f ] Mag: [ %d, %d, %d ] Tmp: [ %.5f ]", 
-// 		agmt.acc.axes.x*acc_scale, agmt.acc.axes.y*acc_scale, agmt.acc.axes.z*acc_scale,
-// 		agmt.gyr.axes.x*gyro_scale - gyro_offset_x, agmt.gyr.axes.y*gyro_scale - gyro_offset_y, agmt.gyr.axes.z*gyro_scale - gyro_offset_z,
-// 		agmt.mag.axes.x, agmt.mag.axes.y, agmt.mag.axes.z,
-// 		agmt.tmp.val*temp_scale + temp_offset
-// 	);
-// }
+void fusion_task(void *pvParameters) {
+    icm20948_device_t icm_dev;
+    icm_init(&icm_dev);
 
-void fusion_task(data_t *data, FusionOffset *offset, FusionAhrs *ahrs, icm20948_agmt_t* agmt)
-{ 
-	// Define calibration (replace with actual calibration data if available)
-	static const FusionMatrix gyroscopeMisalignment = {{{(1.0f), (0.0f), (0.0f)}, {(0.0f), (1.0f), (0.0f)}, {(0.0f), (0.0f), (1.0f)}}};
-	static const FusionVector gyroscopeSensitivity = {{1.0f, 1.0f, 1.0f}};
-	static const FusionVector gyroscopeOffset = {{-1.65f, 1.3f, 0.25f}};
-	static const FusionMatrix accelerometerMisalignment = {{{1.000599f, 0.000295f, 0.001966f}, 
-                                                            {0.000295f, 0.998947f, 0.000291f}, 
-                                                            {0.001966f, 0.000291f, 0.984282f}}};
-	static const FusionVector accelerometerSensitivity = {{1.0f, 1.0f, 1.0f}};
-	static const FusionVector accelerometerOffset = {{-0.002522f, -0.020485f, -0.019608f}};
-	static const FusionMatrix softIronMatrix = {{{1.0f, 0.0f, 0.0f},
-                                                 {0.0f, 1.0f, 0.0f}, 
-                                                 {0.0f, 0.0f, 1.0f}}};
-    static const FusionVector hardIronOffset = {{0.0f, 0.0f, 0.0f}};
-    
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
-    if (icm20948_get_agmt(&icm_dev, agmt) != ICM_20948_STAT_OK)
-    {
-        ESP_LOGE(TAG_FUSION, "get agmt failed");
-        return;
+    TickType_t       xLastWakeTime;
+    const TickType_t xFrequency = pdMS_TO_TICKS(ICM_SAMPLE_RATE_S * 1000);
+
+    vqf_params_t params;
+    vqf_params_init(&params);
+    vqf_handle_t *vqf = vqf_init_custom(&params, ICM_SAMPLE_RATE_S, -1, -1); // gyrTs, accTs, magTs
+
+    icm20948_sample_t icm;
+    static float      initial_temp = 0.0f;
+
+    xLastWakeTime = xTaskGetTickCount();
+    while (true) {
+        xTaskDelayUntil(&xLastWakeTime, xFrequency);
+        icm20948_agmt_t agmt;
+        xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+        icm20948_status_e stat = icm20948_get_agmt(&icm_dev, &agmt);
+        xSemaphoreGive(xI2CMutex);
+        if (stat == ICM_20948_STAT_OK) {
+            if (initial_temp == 0)
+                initial_temp = (agmt.tmp.val * TEMP_SCALE + TEMP_OFFSET) + 273;
+
+            float gyr[3] = {agmt.gyr.axes.x * GYRO_SCALE_RAD, agmt.gyr.axes.y * GYRO_SCALE_RAD,
+                            agmt.gyr.axes.z * GYRO_SCALE_RAD};
+            float acc[3] = {agmt.acc.axes.x * ACC_SCALE_MS2, agmt.acc.axes.y * ACC_SCALE_MS2,
+                            agmt.acc.axes.z * ACC_SCALE_MS2};
+            float mag[3] = {agmt.mag.axes.x * MAG_SCALE, agmt.mag.axes.y * MAG_SCALE, agmt.mag.axes.z * MAG_SCALE};
+            vqf_update(vqf, gyr, acc, mag);
+
+            float q[4];
+            vqf_get_quat9D(vqf, q);
+
+            icm.q1 = q[0];
+            icm.q2 = q[1];
+            icm.q3 = q[2];
+            icm.q4 = q[3];
+
+            // Update raw sensor data
+            icm.accel_x = agmt.acc.axes.x;
+            icm.accel_y = agmt.acc.axes.y;
+            icm.accel_z = agmt.acc.axes.z;
+
+            icm.gyro_x = agmt.gyr.axes.x;
+            icm.gyro_y = agmt.gyr.axes.y;
+            icm.gyro_z = agmt.gyr.axes.z;
+
+            icm.mag_x = agmt.mag.axes.x;
+            icm.mag_y = agmt.mag.axes.y;
+            icm.mag_z = agmt.mag.axes.z;
+
+            float acc_w[3];
+            rotateToWorld(q[0], q[1], q[2], q[3], acc, acc_w);
+            float accel = sqrtf(acc_w[0] * acc_w[0] + acc_w[1] * acc_w[1] + acc_w[2] * acc_w[2]);
+            accel /= G; // Convert to g
+            icm.accel = (uint8_t)lroundf(accel * 10.0f);
+            icm.az    = acc_w[2];
+
+            // Update global ICM sample
+            portENTER_CRITICAL(&xICMMutex);
+            icm_sample_g = icm;
+            portEXIT_CRITICAL(&xICMMutex);
+
+            xTaskNotify(xTaskAcquire, ICM_BIT, eSetBits); // Notify acquire task that new data is available
+        } else
+            ESP_LOGE(TAG, "Get agmt failed");
+
+        portENTER_CRITICAL(&xDATAMutex);
+        bool landed = (data_g.status & LANDED);
+        portEXIT_CRITICAL(&xDATAMutex);
+        if (landed)
+            break;
     }
 
+    vqf_delete(vqf);
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    icm20948_sleep(&icm_dev, true);
     xSemaphoreGive(xI2CMutex);
-    // Update raw sensor data
-    data->accel_x = agmt->acc.axes.x;
-    data->accel_y = agmt->acc.axes.y;
-    data->accel_z = agmt->acc.axes.z;
-    
-    data->gyro_x = agmt->gyr.axes.x;
-    data->gyro_y = agmt->gyr.axes.y;
-    data->gyro_z = agmt->gyr.axes.z;
-    
-    data->mag_x = agmt->mag.axes.x;
-    data->mag_y = agmt->mag.axes.y;
-    data->mag_z = agmt->mag.axes.z;
-    data->temperature = agmt->tmp.val;
-
-    if(initial_temp == 0) initial_temp = (agmt->tmp.val*temp_scale + temp_offset) + 273;
-
-	// Acquire latest sensor data
-    const clock_t timestamp = esp_timer_get_time(); // replace this with actual gyroscope timestamp
-    FusionVector gyroscope = {{agmt->gyr.axes.x*gyro_scale, agmt->gyr.axes.y*gyro_scale, agmt->gyr.axes.z*gyro_scale}}; // in degrees/s
-    FusionVector accelerometer = {{agmt->acc.axes.x*acc_scale, agmt->acc.axes.y*acc_scale, agmt->acc.axes.z*acc_scale}}; // in g
-    FusionVector magnetometer = {{agmt->mag.axes.x*mag_scale, agmt->mag.axes.y*mag_scale, agmt->mag.axes.z*mag_scale}}; // in arbitrary units
-    // Apply calibration
-    gyroscope = FusionCalibrationInertial(gyroscope, gyroscopeMisalignment, gyroscopeSensitivity, gyroscopeOffset);
-    accelerometer = FusionCalibrationInertial(accelerometer, accelerometerMisalignment, accelerometerSensitivity, accelerometerOffset);
-    magnetometer = FusionCalibrationMagnetic(magnetometer, softIronMatrix, hardIronOffset);
-    // Update gyroscope offset correction algorithm
-    gyroscope = FusionOffsetUpdate(offset, gyroscope);
-    // Calculate delta time (in seconds) to account for gyroscope sample clock error
-    static clock_t previousTimestamp;
-    const float deltaTime = (float) (timestamp - previousTimestamp) / (float) CLOCKS_PER_SEC;
-    previousTimestamp = timestamp;
-    // Update gyroscope AHRS algorithm
-    FusionAhrsUpdate(ahrs, gyroscope, accelerometer, magnetometer, deltaTime);
-    const FusionVector a = FusionAhrsGetLinearAcceleration(ahrs);
-    float accel = sqrt(powf(a.axis.x, 2) + powf(a.axis.y, 2) + powf(a.axis.z, 2));
-    data->accel = (int8_t)floor(accel*10);
-    const FusionQuaternion q = FusionAhrsGetQuaternion(ahrs);
-    data->orientation_q1 = q.element.z;
-    data->orientation_q2 = q.element.w;
-    data->orientation_q3 = q.element.x;
-    data->orientation_q4 = q.element.y;
-    const FusionVector g = FusionAhrsGetEarthAcceleration(ahrs);
-    float acc = acc_mahalanobis(-g.axis.z);
-    //if (STATUS & ARMED) altitude_predict(acc);
-    // print_agmt(agmt);
+    vTaskDelete(NULL);
 }
