@@ -1,11 +1,11 @@
 idf_component_register(SRCS main.c
+                            global.c
+                            acquire.c
+                            save_send.c
                             sensors/adc.c
                             sensors/bmp.c
                             sensors/gps.c
                             sensors/icm.c
-                            acquire.c
-                            header.c
-                            save_send.c
                         INCLUDE_DIRS "."
                         PRIV_REQUIRES
                             esp_adc

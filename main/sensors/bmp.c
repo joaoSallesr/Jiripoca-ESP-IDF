@@ -1,13 +1,11 @@
-#include "header.h"
+#include "global.h"
 
 #define CALIBRATION_SAMPLES 20
-#define BMP_TASK_DELAY_MS   20
 
 static const char *TAG = "BMP390";
 
 // -K/m, L: average lapse rate
-static const float medium_lapse_rate    = 0.0065f;
-static const float hypsometric_constant = 29.271247f; // specific dry air constant/gravity
+static const float medium_lapse_rate = 0.0065f;
 
 // R: universal gas constant, g: gravitational acceleration, M: dry air molar mass
 static const float exponent     = 0.1902665f;  // -R*L/g*M
@@ -75,7 +73,7 @@ static void bmp_init(bmp390_handle_t *bmp_hdl) {
     ESP_LOGD(TAG, "Int Control   (0x%02x): %s", interrupt_ctrl_reg.reg, uint8_to_binary(interrupt_ctrl_reg.reg));
 }
 
-void bmp_task(void *pvParameters) {
+void task_bmp(void *pvParameters) {
     bmp390_handle_t bmp_hdl;
     bmp_init(&bmp_hdl);
 

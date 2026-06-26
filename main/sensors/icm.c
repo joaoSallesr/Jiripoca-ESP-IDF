@@ -1,4 +1,4 @@
-#include "header.h"
+#include "global.h"
 
 #define ICM_ERROR_CHECK(x)                                                                                             \
     do {                                                                                                               \
@@ -117,7 +117,7 @@ static void icm_init(icm20948_device_t *icm_dev) {
     xSemaphoreGive(xI2CMutex);
 }
 
-void fusion_task(void *pvParameters) {
+void task_fusion(void *pvParameters) {
     icm20948_device_t icm_dev;
     icm_init(&icm_dev);
 
