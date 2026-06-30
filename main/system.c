@@ -149,6 +149,29 @@ static esp_err_t setup_eskf(void) {
     return err;
 }
 
+static bool check_for_format_mode(void) {
+    if (gpio_get_level(BUTTON_GPIO) == LOW) {
+        int64_t time = esp_timer_get_time();
+        while (gpio_get_level(BUTTON_GPIO) == LOW) {
+            if (esp_timer_get_time() - time > 5000000LL) {
+                ESP_LOGW("RESET", "Button pressed for 5 seconds. Formatting...");
+                // Signal format mode
+                for (uint32_t i = 0; i < 2; ++i) {
+                    gpio_set_level(LED_GPIO, HIGH);
+                    gpio_set_level(BUZZER_GPIO, HIGH);
+                    vTaskDelay(pdMS_TO_TICKS(150));
+                    gpio_set_level(LED_GPIO, LOW);
+                    gpio_set_level(BUZZER_GPIO, LOW);
+                    vTaskDelay(pdMS_TO_TICKS(150));
+                }
+                return true;
+            }
+            vTaskDelay(10);
+        }
+    }
+    return false;
+}
+
 void task_setup(void *pvParameters) {
     esp_err_t err = ESP_OK;
 
@@ -179,6 +202,27 @@ void task_setup(void *pvParameters) {
     } else {
         goto setup_error;
     }
+
+    /* Wait for full initialization then wait for format input */
+    const EventBits_t bits_to_wait = EVT_SD_DONE | EVT_LFS_DONE;
+
+    do {
+        bool format_mode = check_for_format_mode();
+        manage_nvs_counters(format_mode);
+        // If format is true, format SD and LittleFS, then restart
+        if (format_mode) {
+            xTaskCreate(task_sd, "SD", configMINIMAL_STACK_SIZE * 8, &file_counter_g, 5, NULL);
+            xTaskCreate(task_lfs, "LittleFS", configMINIMAL_STACK_SIZE * 8, &file_counter_g, 5, NULL);
+            xEventGroupWaitBits(xFormatEventGroup, bits_to_wait, pdTRUE, pdTRUE, portMAX_DELAY);
+            ESP_LOGW(TAG_SYS, "Restarting after format...");
+            esp_restart();
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    } while (gpio_get_level(RBF_GPIO) == LOW); // While not armed
+
+    portENTER_CRITICAL(&xDATAMutex);
+    data_g.status |= ARMED; // ?
+    portEXIT_CRITICAL(&xDATAMutex);
 
     vTaskDelete(NULL);
 
