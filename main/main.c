@@ -8,26 +8,6 @@ static const char *TAG_MAIN = "MAIN";
 #define LORA_QUEUE_SIZE     1   // Overwrite queue
 #define B4LAUNCH_QUEUE_SIZE 650 // Max of 13 samples/s: 650 =~ 5s of flight data
 
-// task_buzzer_led blinks LED and beeps buzzer to indicate status
-void task_buzzer_led(void *pvParameters) {
-    while (true) {
-        bool landed = false;
-        portENTER_CRITICAL(&xDATAMutex);
-        if (data_g.status & LANDED)
-            landed = true;
-        portEXIT_CRITICAL(&xDATAMutex);
-
-        gpio_set_level(LED_GPIO, HIGH);
-        if (landed)
-            gpio_set_level(BUZZER_GPIO, HIGH);
-        vTaskDelay(pdMS_TO_TICKS(500));
-        gpio_set_level(LED_GPIO, LOW);
-        if (landed)
-            gpio_set_level(BUZZER_GPIO, LOW);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}
-
 static bool check_for_format_mode(void) {
     if (gpio_get_level(BUTTON_GPIO) == LOW) {
         int64_t time = esp_timer_get_time();
@@ -90,27 +70,6 @@ void app_main(void) {
     } while (gpio_get_level(RBF_GPIO) == LOW); // While not armed
 
     data_g.status |= ARMED;
-
-    eskf_var_t var = {
-        .acc    = 0.25f,
-        .bar    = 1.65f,
-        .gps_h  = 625.0f,
-        .gps_vz = 0.0025f,
-        .ba     = 1e-4f,
-        .bb     = 5e-1f,
-        .θe     = 1e-6f,
-    };
-
-    eskf_config_t cfg = {
-        .var          = var,
-        .dt           = ICM_SAMPLE_RATE_S,
-        .g            = G,
-        .igt          = 3.0f,
-        .idle_samples = 1000, // 10 seconds at 100 Hz
-    };
-
-    data_g.kf.cfg = cfg;
-    eskf_init(&data_g.kf);
 
     // Create tasks
     xTaskCreatePinnedToCore(task_gps, "GPS", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL, 1);

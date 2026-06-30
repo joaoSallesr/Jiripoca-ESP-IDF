@@ -54,3 +54,4 @@ void task_sd(void *pvParameters);
 void task_lfs(void *pvParameters);
 void task_nvs(void *pvParameters);
 void task_lora(void *pvParameters);
+void task_buzzer_led(void *pvParameters);

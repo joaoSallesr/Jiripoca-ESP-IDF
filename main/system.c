@@ -117,6 +117,38 @@ static esp_err_t setup_nvs(bool format_mode) {
     return err;
 }
 
+static esp_err_t setup_eskf(void) {
+    esp_err_t err = ESP_OK;
+
+    eskf_var_t var = {
+        .acc    = 0.25f,
+        .bar    = 1.65f,
+        .gps_h  = 625.0f,
+        .gps_vz = 0.0025f,
+        .ba     = 1e-4f,
+        .bb     = 5e-1f,
+        .θe     = 1e-6f,
+    };
+
+    eskf_config_t cfg = {
+        .var          = var,
+        .dt           = ICM_SAMPLE_RATE_S,
+        .g            = G,
+        .igt          = 3.0f,
+        .idle_samples = 1000, // 10 seconds at 100 Hz
+    };
+
+    data_g.kf.cfg = cfg;
+
+    err = eskf_init(&data_g.kf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_SYS, "ESKF initialization failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    return err;
+}
+
 void task_setup(void *pvParameters) {
     esp_err_t err = ESP_OK;
 
@@ -128,6 +160,12 @@ void task_setup(void *pvParameters) {
 
     ESP_LOGI(TAG_SYS, "NVS flash init");
     err = setup_nvs(FORMAT_MODE);
+    if (err != ESP_OK) {
+        goto setup_error;
+    }
+
+    ESP_LOGI(TAG_SYS, "ESKF init");
+    err = setup_eskf();
     if (err != ESP_OK) {
         goto setup_error;
     }
@@ -149,6 +187,26 @@ setup_error: {
     xQueueSend(xEventQueue, &evt, portMAX_DELAY);
 }
     vTaskDelete(NULL);
+}
+
+// task_buzzer_led blinks LED and beeps buzzer to indicate status
+void task_buzzer_led(void *pvParameters) {
+    while (true) {
+        bool landed = false;
+        portENTER_CRITICAL(&xDATAMutex);
+        if (data_g.status & LANDED)
+            landed = true;
+        portEXIT_CRITICAL(&xDATAMutex);
+
+        gpio_set_level(LED_GPIO, HIGH);
+        if (landed)
+            gpio_set_level(BUZZER_GPIO, HIGH);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        gpio_set_level(LED_GPIO, LOW);
+        if (landed)
+            gpio_set_level(BUZZER_GPIO, LOW);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 }
 
 void task_log(void *pvParameters) {
