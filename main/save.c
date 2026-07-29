@@ -4,95 +4,81 @@ static const char *TAG_SD  = "SD";
 static const char *TAG_LFS = "LittleFS";
 static const char *TAG_NVS = "NVS";
 
-void task_sd(void *pvParameters) {
-    const file_counter_t counter = *(file_counter_t *)pvParameters;
-    esp_err_t            errSD;
-    sdmmc_card_t        *card;
+/* SD & LITTLEFS CONFIG */
+#define SD_MAX_FILES    5
+#define SD_MOUNT        "/sdcard"
+#define SD_BUFFER_SIZE  4096
+#define SD_UNIT_SIZE    32 * 1024
+#define LFS_MAX_FILES   32
+#define LFS_BUFFER_SIZE 512
+#define LFS_MAX_FLASH   0.9 // Maximum percentage of flash to be used by littlefs
+#define FILENAME_LENGTH 32
 
-    // Settings for mounting FAT filesystem
-    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = false,
-        .max_files              = MAX_SD_FILES,
-        .allocation_unit_size   = SD_UNIT_SIZE,
-    };
-    // Set CONFIG_SD_FORMAT_IF_MOUNT_FAILED to TRUE or FALSE
-    // When format_if_mount_failed is set to true, SD card will be partitioned and formatted
+void task_sd(void *pvParameters) {
+    esp_err_t     err;
+    sdmmc_card_t *card;
+    uint8_t      *sd_dma_buf = NULL;
+
+    bool sd_mounted = false;
 
     ESP_LOGI(TAG_SD, "Initializing SD card");
 
-    // Settings for initializing SPI bus
-    spi_bus_config_t bus_config = {
-        .mosi_io_num     = MOSI,
-        .miso_io_num     = MISO,
-        .sclk_io_num     = SCK,
-        .quadwp_io_num   = -1,
-        .quadhd_io_num   = -1,
-        .max_transfer_sz = SD_BUFFER_SIZE,
+    /* SDIO host driver (4-bit mode enabled, max frequency set to 20MHz) */
+    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+
+    /* SDIO slot config */
+    sdmmc_slot_config_t sd_cfg = {
+        .clk     = SD_CLK,
+        .cmd     = SD_CMD,
+        .d0      = SD_DATA0,
+        .d1      = SD_DATA1,
+        .d2      = SD_DATA2,
+        .d3      = SD_DATA3,
+        .cd      = GPIO_NUM_NC,
+        .gpio_wp = GPIO_NUM_NC,
+        .width   = 4, // 4-bit mode
+        .flags   = SDMMC_SLOT_FLAG_INTERNAL_PULLUP,
     };
-    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
 
-    // SPI initializer
-    ESP_LOGD(TAG_SD, "Using SPI peripheral");
-    errSD = spi_bus_initialize(host.slot, &bus_config, SDSPI_DEFAULT_DMA);
-    if (errSD != ESP_OK) {
-        ESP_LOGE(TAG_SD, "Failed to initialize SPI bus: %s", esp_err_to_name(errSD));
-        vTaskDelete(NULL);
-    }
-    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_config.gpio_cs               = SS;
-    slot_config.host_id               = host.slot;
-    ESP_LOGD(TAG_SD, "SPI bus initialized");
+    /* Options for mounting file system */
+    esp_vfs_fat_sdmmc_mount_config_t mount_cfg = {
+        .format_if_mount_failed = false,
+        .max_files              = SD_MAX_FILES,
+        .allocation_unit_size   = SD_UNIT_SIZE,
+    };
 
-    // Mount filesystem
-    ESP_LOGD(TAG_SD, "Mounting filesystem");
-    errSD = esp_vfs_fat_sdspi_mount(SD_MOUNT, &host, &slot_config, &mount_config, &card);
-    if (errSD != ESP_OK) {
-        if (errSD == ESP_FAIL)
-            ESP_LOGE(
-                TAG_SD,
-                "Failed to mount filesystem. "
-                "If you want the card to be formatted, set the CONFIG_SD_FORMAT_IF_MOUNT_FAILED menuconfig option.");
-        else
-            ESP_LOGE(TAG_SD, "Failed to initialize the card: %s. ", esp_err_to_name(errSD));
-        spi_bus_free(host.slot);
-        ESP_LOGD(TAG_SD, "SPI bus freed");
-        vTaskDelete(NULL);
+    /* Mount filesystem */
+    ESP_LOGI(TAG_SD, "Mounting filesystem");
+    err = esp_vfs_fat_sdmmc_mount(SD_MOUNT, &host, &sd_cfg, &mount_cfg, &card);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_SD, "Failed to mount SD card: %s.", esp_err_to_name(err));
+        goto setup_error;
     }
+
     ESP_LOGI(TAG_SD, "Filesystem mounted");
+    sdmmc_card_print_info(stdout, card);
+    sd_mounted = true;
 
-    // Format mode
-    if (counter.format == pdTRUE) {
+    /* SD format mode */
+    if (file_counter_g.format == true) {
         ESP_LOGW(TAG_SD, "Format mode enabled, formatting SD card");
-        errSD = esp_vfs_fat_sdcard_format(SD_MOUNT, card);
-        if (errSD != ESP_OK)
-            ESP_LOGE(TAG_SD, "Failed to format FATFS: %s", esp_err_to_name(errSD));
-        else
-            ESP_LOGI(TAG_SD, "Format Successful");
-
-        esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
-        ESP_LOGI(TAG_SD, "Card unmounted");
-        spi_bus_free(host.slot);
-        ESP_LOGI(TAG_SD, "SPI bus freed");
-        xEventGroupSetBits(xFormatEventGroup, EVT_SD_DONE);
-        vTaskDelete(NULL);
+        err = esp_vfs_fat_sdcard_format(SD_MOUNT, card);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG_SD, "Failed to format SD card: %s", esp_err_to_name(err));
+            goto setup_error;
+        }
+        goto format_device;
     }
 
-    // Print sd card info
-    sdmmc_card_print_info(stdout, card);
-
-    // Create log file
+    /* Create log file */
     char log_name[FILENAME_LENGTH];
-    snprintf(log_name, FILENAME_LENGTH, "%s/flight%ld.bin", SD_MOUNT, counter.sd_files);
+    snprintf(log_name, FILENAME_LENGTH, "%s/test%lu.bin", SD_MOUNT, file_counter_g.sd_files);
     ESP_LOGI(TAG_SD, "Creating file %s", log_name);
 
     FILE *f = fopen(log_name, "wb");
     if (!f) {
         ESP_LOGE(TAG_SD, "Failed to open file for writing");
-        esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
-        ESP_LOGI(TAG_SD, "Card unmounted");
-        spi_bus_free(host.slot);
-        ESP_LOGI(TAG_SD, "SPI bus freed");
-        vTaskDelete(NULL);
+        goto cleanup;
     }
 
     static uint8_t write_buffer[SD_BUFFER_SIZE];
@@ -100,6 +86,7 @@ void task_sd(void *pvParameters) {
     save_t         save_data;
     TickType_t     last_sync = xTaskGetTickCount();
 
+    /* Flight data save loop */
     while (true) {
         // Read data from queue
         if (xQueueReceive(xSDQueue, &save_data, portMAX_DELAY) == pdTRUE) {
@@ -154,18 +141,45 @@ void task_sd(void *pvParameters) {
     }
 
     ESP_LOGW(TAG_SD, "Landed, closing file and unmounting SD card");
+    goto close;
+
+close:
     fflush(f);
     fsync(fileno(f));
     fclose(f);
-    taskYIELD();                   // Yield to allow other tasks to run
-    vTaskDelay(pdMS_TO_TICKS(20)); // Short delay to ensure SPI driver is done
+    taskYIELD(); // Yield to allow other tasks to runs
+    vTaskDelay(pdMS_TO_TICKS(20));
+
     ESP_LOGI(TAG_SD, "File closed");
+
+cleanup:
+    free(sd_dma_buf);
+
     esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
     ESP_LOGI(TAG_SD, "Card unmounted");
-    spi_bus_free(host.slot);
-    ESP_LOGI(TAG_SD, "SPI bus freed");
-    xEventGroupSetBits(xNVSCounterEventGroup, EVT_SD_DONE); // Signal that SD task is done
 
+    xEventGroupSetBits(xNVSCounterEventGroup, EVT_SD_DONE); // Signal that SD task is done
+    vTaskDelete(NULL);
+
+setup_error:
+    ESP_LOGE(TAG_SD, "SD init failed: %s", esp_err_to_name(err));
+
+    if (sd_mounted) {
+        esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
+        ESP_LOGI(TAG_SD, "Card unmounted");
+    }
+
+    status_event_t evt = EVT_SETUP_FAILED;
+    xQueueSend(xEventQueue, &evt, portMAX_DELAY);
+    vTaskDelete(NULL);
+
+format_device:
+    ESP_LOGW(TAG_SD, "SD card formatted");
+
+    esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
+    ESP_LOGI(TAG_SD, "Card unmounted");
+
+    xEventGroupSetBits(xNVSCounterEventGroup, EVT_SD_DONE); // Signal that SD task is done
     vTaskDelete(NULL);
 }
 
@@ -220,7 +234,7 @@ void task_lfs(void *pvParameters) {
         vTaskDelete(NULL);
     }
 
-    static uint8_t buffer[LITTLEFS_BUFFER_SIZE];
+    static uint8_t buffer[LFS_BUFFER_SIZE];
     uint16_t       buffer_offset = 0;
     save_t         save_data;
     bool           _lfs_full;
@@ -237,16 +251,16 @@ void task_lfs(void *pvParameters) {
         // Read data from queue
         if (xQueueReceive(xLittleFSQueue, &save_data, portMAX_DELAY) == pdTRUE) {
             // If buffer is full, write to file
-            if (buffer_offset + sizeof(save_t) > LITTLEFS_BUFFER_SIZE) {
+            if (buffer_offset + sizeof(save_t) > LFS_BUFFER_SIZE) {
                 if (!_lfs_full) {
-                    if (used + buffer_offset > MAX_FLASH_SIZE_USED * total) // Check if there's space before writing
+                    if (used + buffer_offset > LFS_MAX_FLASH * total) // Check if there's space before writing
                     {
                         ESP_LOGW(TAG_LFS, "Flash memory almost full.");
                         _lfs_full = true;
                         atomic_store_explicit(&lfs_full, true, memory_order_relaxed);
                     } else {
-                        size_t w = fwrite(buffer, 1, LITTLEFS_BUFFER_SIZE, f);
-                        if (w != LITTLEFS_BUFFER_SIZE)
+                        size_t w = fwrite(buffer, 1, LFS_BUFFER_SIZE, f);
+                        if (w != LFS_BUFFER_SIZE)
                             ESP_LOGE(TAG_LFS, "Failed to write data to file");
                         else
                             ESP_LOGD(TAG_LFS, "Data written to LittleFS");
@@ -273,7 +287,7 @@ void task_lfs(void *pvParameters) {
 
     if (buffer_offset > 0) // Write remaining data to file
     {
-        if (_lfs_full || used + buffer_offset > MAX_FLASH_SIZE_USED * total) // Check if there's space before writing
+        if (_lfs_full || used + buffer_offset > LFS_MAX_FLASH * total) // Check if there's space before writing
             ESP_LOGW(TAG_LFS, "Flash memory almost full. Remaining data not written.");
         else {
             size_t w = fwrite(buffer, 1, buffer_offset, f);

@@ -16,15 +16,15 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 
-#include <esp_adc/adc_cali.h>
-#include <esp_adc/adc_cali_scheme.h>
-#include <esp_adc/adc_oneshot.h>
-
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/timers.h>
 
+#include <driver/gpio.h>
 #include <driver/i2c_master.h>
+#include <driver/sdmmc_host.h>
+#include <driver/spi_common.h>
+#include <driver/spi_master.h>
 #include <driver/uart.h>
 
 #include <esp_littlefs.h>
@@ -33,14 +33,17 @@
 #include <nvs_flash.h>
 #include <sdmmc_cmd.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
-#include <bmp390.h>
-#include <eskf.h>
-#include <icm20948.h>
-#include <icm20948_i2c.h>
-#include <minmea.h>
-#include <vqf_c.h>
+#include <esp_adc/adc_cali.h>
+#include <esp_adc/adc_cali_scheme.h>
+#include <esp_adc/adc_oneshot.h>
+
+#include "bmp390.h"
+#include "eskf.h"
+#include "icm20948.h"
+#include "icm20948_i2c.h"
+#include "minmea.h"
+#include "vqf_c.h"
 
 #define BUZZER_GPIO     GPIO_NUM_38
 #define LED_GPIO        GPIO_NUM_15
@@ -88,20 +91,11 @@
 #define GPS_BAUDRATE  9600
 #define LORA_BAUDRATE 115200
 
-#define GPS_RX_CHUNK         128
-#define GPS_BUFF_SIZE        4096
-#define SD_BUFFER_SIZE       4096
-#define LITTLEFS_BUFFER_SIZE 512
+#define GPS_RX_CHUNK  128
+#define GPS_BUFF_SIZE 4096
 
 #define LORA_RATE_MS               200 // 5Hz
 #define CONFIG_E220_AUX_TIMEOUT_MS 1200
-
-#define MAX_LFS_FILES       32
-#define MAX_SD_FILES        5
-#define SD_UNIT_SIZE        32 * 1024
-#define SD_MOUNT            "/sdcard"
-#define MAX_FLASH_SIZE_USED 0.9 // Maximum percentage of flash to be used by littlefs
-#define FILENAME_LENGTH     32
 
 #define BMP390_I2C_ADDRESS   (0x77)
 #define ICM20948_I2C_ADDRESS (0x68)
