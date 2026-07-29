@@ -34,7 +34,6 @@ extern TaskHandle_t xTaskLora;
 extern TaskHandle_t xTaskAcquire;
 
 /* EVENT HANDLE */
-extern EventGroupHandle_t xStatusEventGroup;
 extern EventGroupHandle_t xInitEventGroup;
 extern EventGroupHandle_t xNVSCounterEventGroup; // NVS counter synchronization
 extern EventGroupHandle_t xFormatEventGroup;     // LittleFS and SD format synchronization

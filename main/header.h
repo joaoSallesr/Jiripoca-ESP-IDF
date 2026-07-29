@@ -42,9 +42,6 @@
 #include <minmea.h>
 #include <vqf_c.h>
 
-#define HIGH 1
-#define LOW  0
-
 #define BUZZER_GPIO     GPIO_NUM_38
 #define LED_GPIO        GPIO_NUM_15
 #define ALED_GPIO       GPIO_NUM_6
@@ -69,6 +66,22 @@
 #define I2C_SCL_IO      GPIO_NUM_9
 #define GPS_UART_NUM    UART_NUM_1
 #define LORA_UART_NUM   UART_NUM_2
+
+#define HIGH 1
+#define LOW  0
+
+/* GPIO */
+#define MS_CS    GPIO_NUM_12
+#define HX_CLK   GPIO_NUM_37
+#define HX_DOUT  GPIO_NUM_38
+#define SD_DATA0 GPIO_NUM_39
+#define SD_DATA1 GPIO_NUM_40
+#define SD_DATA3 GPIO_NUM_41
+#define SD_DATA2 GPIO_NUM_42
+#define SD_CLK   GPIO_NUM_43
+#define SD_CMD   GPIO_NUM_46
+#define SD_DET   GPIO_NUM_45
+#define SD_PWR   GPIO_NUM_46
 
 #define I2C_SPEED 400000 // 400kHz, fast mode
 
@@ -97,8 +110,8 @@
 #define BMP_SAMPLE_RATE_MS 50    // 20Hz
 #define GPS_SAMPLE_RATE_MS 200   // 5Hz, M8N GPS & GLONASS
 
-/* STATUS FLAGS */
-#define TASK_INIT       BIT(0)
+// AUMENTAR OS BITS DO status e mudar para estados do fogute melhor e tals
+/*#define TASK_INIT       BIT(0)
 #define SETUP_OK        BIT(1)
 #define FATAL_ERROR     BIT(2)
 #define ARMED           BIT(3)
@@ -108,9 +121,21 @@
 #define MAIN_DEPLOYED   BIT(7)
 #define LANDING         BIT(8)
 #define LANDED          BIT(9)
+*/
+
+/* STATUS FLAGS */
+#define INITIALIZED     BIT(0)
+#define ARMED           BIT(1)
+#define BOOST           BIT(2)
+#define COAST           BIT(3)
+#define DROGUE_DEPLOYED BIT(4)
+#define MAIN_DEPLOYED   BIT(5)
+#define LANDING         BIT(6)
+#define LANDED          BIT(7)
 #define NVS_EDIT        BIT(10)
 
 /* INIT FLAGS */
+// separar estados do foguete e estados de inicialização dos componentes e afins
 #define BMP_INIT  BIT(0)
 #define MS_INIT   BIT(1)
 #define LSM_INIT  BIT(2)

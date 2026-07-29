@@ -22,7 +22,6 @@ void app_main(void) {
     xI2CSem = xSemaphoreCreateMutex();
 
     /* Create Event Group */
-    xStatusEventGroup     = xEventGroupCreate();
     xInitEventGroup       = xEventGroupCreate();
     xNVSCounterEventGroup = xEventGroupCreate();
     xFormatEventGroup     = xEventGroupCreate();

@@ -54,8 +54,6 @@ static esp_err_t setup_peripherals(void) {
 
     if (xEventQueue == NULL)
         return ESP_ERR_INVALID_ARG;
-    if (xStatusEventGroup == NULL)
-        return ESP_ERR_INVALID_ARG;
     if (xInitEventGroup == NULL)
         return ESP_ERR_INVALID_ARG;
     if (xNVSCounterEventGroup == NULL)
@@ -208,7 +206,7 @@ void task_setup(void *pvParameters) {
 
     do {
         bool format_mode = check_for_format_mode();
-        manage_nvs_counters(format_mode);
+        setup_nvs(format_mode);
         // If format is true, format SD and LittleFS, then restart
         if (format_mode) {
             xTaskCreate(task_sd, "SD", configMINIMAL_STACK_SIZE * 8, &file_counter_g, 5, NULL);
@@ -237,10 +235,9 @@ setup_error: {
 void task_buzzer_led(void *pvParameters) {
     while (true) {
         bool landed = false;
-        portENTER_CRITICAL(&xDATAMutex);
+
         if (data_g.status & LANDED)
             landed = true;
-        portEXIT_CRITICAL(&xDATAMutex);
 
         gpio_set_level(LED_GPIO, HIGH);
         if (landed)
@@ -255,6 +252,7 @@ void task_buzzer_led(void *pvParameters) {
 
 void task_log(void *pvParameters) {
     data_t data;
+
     while (true) {
         portENTER_CRITICAL(&xDATAMutex);
         data = data_g;

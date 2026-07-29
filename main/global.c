@@ -28,7 +28,6 @@ portMUX_TYPE xICMMutex  = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE xADCMutex  = portMUX_INITIALIZER_UNLOCKED;
 
 /* EVENT HANDLE */
-EventGroupHandle_t xStatusEventGroup     = NULL;
 EventGroupHandle_t xInitEventGroup       = NULL;
 EventGroupHandle_t xNVSCounterEventGroup = NULL;
 EventGroupHandle_t xFormatEventGroup     = NULL;

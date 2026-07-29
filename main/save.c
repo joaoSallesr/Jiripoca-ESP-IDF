@@ -1,6 +1,6 @@
 #include "global.h"
 
-static const char *TAG_SD  = "SD Card";
+static const char *TAG_SD  = "SD";
 static const char *TAG_LFS = "LittleFS";
 static const char *TAG_NVS = "NVS";
 

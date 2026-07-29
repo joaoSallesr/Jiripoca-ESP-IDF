@@ -4,12 +4,12 @@
 
 static const char *TAG = "BMP390";
 
-// -K/m, L: average lapse rate
+// K/m, L: average lapse rate
 static const float medium_lapse_rate = 0.0065f;
 
 // R: universal gas constant, g: gravitational acceleration, M: dry air molar mass
-static const float exponent     = 0.1902665f;  // -R*L/g*M
-static const float inv_exponent = 5.25578596f; // -g*M/R*L
+static const float exponent     = 0.1902665f;  // R*L/g*M
+static const float inv_exponent = 5.25578596f; // g*M/R*L
 
 static const float standard_sea_pressure = 101325.0f; // Pa (atmospheric preassure at sea level)
 static const float standard_sea_temp     = 288.15f;   // K (15°C)
@@ -36,6 +36,7 @@ static void bmp_init(bmp390_handle_t *bmp_hdl) {
         .temperature_oversampling = BMP390_TEMPERATURE_OVERSAMPLING_2X,
         .output_data_rate         = BMP390_ODR_20MS,
     };
+
     // bmp390_config_t bmp_cfg = I2C_BMP390_CONFIG_DEFAULT;
     // bmp_cfg.i2c_address = BMP390_I2C_ADDRESS;
     // bmp_cfg.i2c_clock_speed = I2C_SPEED;
@@ -58,6 +59,7 @@ static void bmp_init(bmp390_handle_t *bmp_hdl) {
     // Set power mode manually
     xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ESP_ERROR_CHECK(bmp390_set_power_mode(*bmp_hdl, bmp_cfg.power_mode));
+
     // Attempt to read registers
     bmp390_get_configuration_register(*bmp_hdl, &config_reg);
     bmp390_get_oversampling_register(*bmp_hdl, &oversampling_reg);
