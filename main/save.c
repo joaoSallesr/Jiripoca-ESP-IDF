@@ -17,7 +17,6 @@ static const char *TAG_NVS = "NVS";
 void task_sd(void *pvParameters) {
     esp_err_t     err;
     sdmmc_card_t *card;
-    uint8_t      *sd_dma_buf = NULL;
 
     bool sd_mounted = false;
 
@@ -81,6 +80,12 @@ void task_sd(void *pvParameters) {
         goto cleanup;
     }
 
+    /* Write header */
+    file_header_t sd_header = {
+        .name_check = 0xABCD1234,
+        .timestamp  = (uint32_t)esp_timer_get_time(),
+    };
+
     static uint8_t write_buffer[SD_BUFFER_SIZE];
     uint16_t       buffer_offset = 0;
     save_t         save_data;
@@ -88,6 +93,7 @@ void task_sd(void *pvParameters) {
 
     /* Flight data save loop */
     while (true) {
+        // ================================= REVISÃO =================================
         // Read data from queue
         if (xQueueReceive(xSDQueue, &save_data, portMAX_DELAY) == pdTRUE) {
             // If buffer is full, write to file
@@ -140,10 +146,10 @@ void task_sd(void *pvParameters) {
             ESP_LOGD(TAG_SD, "Before launch data written to SD card");
     }
 
-    ESP_LOGW(TAG_SD, "Landed, closing file and unmounting SD card");
-    goto close;
+    // ================================= REVISÃO =================================
 
-close:
+    ESP_LOGW(TAG_SD, "Landed, closing file and unmounting SD card");
+
     fflush(f);
     fsync(fileno(f));
     fclose(f);
@@ -153,8 +159,6 @@ close:
     ESP_LOGI(TAG_SD, "File closed");
 
 cleanup:
-    free(sd_dma_buf);
-
     esp_vfs_fat_sdcard_unmount(SD_MOUNT, card);
     ESP_LOGI(TAG_SD, "Card unmounted");
 
@@ -184,67 +188,70 @@ format_device:
 }
 
 void task_lfs(void *pvParameters) {
-    const file_counter_t counter = *(file_counter_t *)pvParameters;
-    esp_err_t            errFS;
+    esp_err_t err;
 
-    // Settings for initializing LittleFS
-    esp_vfs_littlefs_conf_t littlefs_config = {
+    bool lfs_mounted = false;
+
+    /* Settings for initializing LittleFS */
+    esp_vfs_littlefs_conf_t littlefs_cfg = {
         .base_path              = "/littlefs",
         .partition_label        = "littlefs",
         .format_if_mount_failed = true,
         .dont_mount             = false,
     };
 
+    /* LittleFS initialization */
     ESP_LOGI(TAG_LFS, "Initializing LittleFS");
-    errFS = esp_vfs_littlefs_register(&littlefs_config);
-    if (errFS != ESP_OK) {
-        if (errFS == ESP_FAIL)
-            ESP_LOGE(TAG_LFS, "Failed to mount or format filesystem");
-        else if (errFS == ESP_ERR_NOT_FOUND)
-            ESP_LOGE(TAG_LFS, "Failed to find LittleFS partition");
-        else
-            ESP_LOGE(TAG_LFS, "Failed to initialize LittleFS: %s", esp_err_to_name(errFS));
-
-        vTaskDelete(NULL);
+    err = esp_vfs_littlefs_register(&littlefs_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_LFS, "Failed to mount LittleFS: %s", esp_err_to_name(err));
+        goto setup_error;
     }
 
-    // Format mode
-    if (counter.format == pdTRUE) {
+    size_t lfs_size = 0;
+    size_t lfs_used = 0;
+    ESP_LOGI(TAG_LFS, "Filesystem mounted");
+    err = esp_littlefs_info(littlefs_cfg.partition_label, &lfs_size, &lfs_used);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_LFS, "Failed to get LittleFS partition information");
+        goto setup_error;
+    }
+    lfs_mounted = true;
+
+    ESP_LOGI(TAG_LFS, "Partition size: %d/%d (%.2f%%)", lfs_used, lfs_size, (float)(lfs_used / lfs_size * 100.0f));
+
+    /* LittleFS format mode */
+    if (file_counter_g.format == true) {
         ESP_LOGW(TAG_LFS, "Format mode enabled, formatting LittleFS");
-        errFS = esp_littlefs_format(littlefs_config.partition_label);
-        if (errFS != ESP_OK)
-            ESP_LOGE(TAG_LFS, "Failed to format LittleFS: %s", esp_err_to_name(errFS));
-        else
-            ESP_LOGI(TAG_LFS, "Format Successful");
-
-        xEventGroupSetBits(xFormatEventGroup, EVT_LFS_DONE);
-        vTaskDelete(NULL);
+        err = esp_littlefs_format(littlefs_cfg.partition_label);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG_LFS, "Failed to format LittleFS: %s", esp_err_to_name(err));
+            goto setup_error;
+        }
+        goto format_device;
     }
 
-    // Create log file
+    /* Create log file */
     char log_name[FILENAME_LENGTH];
-    snprintf(log_name, FILENAME_LENGTH, "%s/flight%ld.bin", littlefs_config.base_path, counter.lfs_files);
+    snprintf(log_name, FILENAME_LENGTH, "%s/flight%lu.bin", littlefs_cfg.base_path, file_counter_g.lfs_files);
     ESP_LOGI(TAG_LFS, "Created file %s", log_name);
 
     FILE *f = fopen(log_name, "wb");
     if (!f) {
         ESP_LOGE(TAG_LFS, "Failed to open file for writing");
-        esp_vfs_littlefs_unregister(littlefs_config.partition_label);
-        ESP_LOGI(TAG_LFS, "LittleFS unmounted");
-        vTaskDelete(NULL);
+        goto cleanup;
     }
+
+    /* Write header */
+    file_header_t lfs_header = {
+        .name_check = 0xABCD5678,
+        .timestamp  = (uint32_t)esp_timer_get_time(),
+    };
 
     static uint8_t buffer[LFS_BUFFER_SIZE];
     uint16_t       buffer_offset = 0;
     save_t         save_data;
     bool           _lfs_full;
-
-    size_t total = 0, used = 0;
-    errFS = esp_littlefs_info(littlefs_config.partition_label, &total, &used);
-    if (errFS != ESP_OK)
-        ESP_LOGE(TAG_LFS, "Failed to get LittleFS partition information: %s", esp_err_to_name(errFS));
-    else
-        ESP_LOGI(TAG_LFS, "Partition size: %d/%d (%.2f%%)", used, total, (float)(used / total * 100.0f));
 
     while (true) {
         _lfs_full = atomic_load_explicit(&lfs_full, memory_order_relaxed);
@@ -253,7 +260,7 @@ void task_lfs(void *pvParameters) {
             // If buffer is full, write to file
             if (buffer_offset + sizeof(save_t) > LFS_BUFFER_SIZE) {
                 if (!_lfs_full) {
-                    if (used + buffer_offset > LFS_MAX_FLASH * total) // Check if there's space before writing
+                    if (lfs_used + buffer_offset > LFS_MAX_FLASH * lfs_size) // Check if there's space before writing
                     {
                         ESP_LOGW(TAG_LFS, "Flash memory almost full.");
                         _lfs_full = true;
@@ -264,8 +271,8 @@ void task_lfs(void *pvParameters) {
                             ESP_LOGE(TAG_LFS, "Failed to write data to file");
                         else
                             ESP_LOGD(TAG_LFS, "Data written to LittleFS");
-                        used += sizeof(buffer); // Update used space tracker
-                        taskYIELD();            // Yield to allow other tasks to run
+                        lfs_used += sizeof(buffer); // Update used space tracker
+                        taskYIELD();                // Yield to allow other tasks to run
                     }
                 }
                 buffer_offset = 0; // Reset buffer index for next batch (or drop if full)
@@ -287,7 +294,7 @@ void task_lfs(void *pvParameters) {
 
     if (buffer_offset > 0) // Write remaining data to file
     {
-        if (_lfs_full || used + buffer_offset > LFS_MAX_FLASH * total) // Check if there's space before writing
+        if (_lfs_full || lfs_used + buffer_offset > LFS_MAX_FLASH * lfs_size) // Check if there's space before writing
             ESP_LOGW(TAG_LFS, "Flash memory almost full. Remaining data not written.");
         else {
             size_t w = fwrite(buffer, 1, buffer_offset, f);
@@ -295,18 +302,43 @@ void task_lfs(void *pvParameters) {
                 ESP_LOGE(TAG_LFS, "Failed to write remaining data to file");
             else
                 ESP_LOGD(TAG_LFS, "Remaining data written to LittleFS");
-            used += buffer_offset; // Update used space tracker
+            lfs_used += buffer_offset; // Update used space tracker
         }
     }
 
     ESP_LOGW(TAG_LFS, "Landed, closing file and unmounting LittleFS");
-    fclose(f);
-    ESP_LOGI(TAG_LFS, "File closed");
-    vTaskDelay(pdMS_TO_TICKS(20));
-    esp_vfs_littlefs_unregister(littlefs_config.partition_label);
-    ESP_LOGI(TAG_LFS, "LittleFS unmounted");
-    xEventGroupSetBits(xNVSCounterEventGroup, EVT_LFS_DONE); // Signal that LFS task is done
 
+    fclose(f);
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    ESP_LOGI(TAG_LFS, "File closed");
+
+cleanup:
+    esp_vfs_littlefs_unregister(littlefs_cfg.partition_label);
+    ESP_LOGI(TAG_LFS, "LittleFS unmounted");
+
+    xEventGroupSetBits(xNVSCounterEventGroup, EVT_LFS_DONE); // Signal that LFS task is done
+    vTaskDelete(NULL);
+
+setup_error:
+    ESP_LOGE(TAG_LFS, "LFS init failed: %s", esp_err_to_name(err));
+
+    if (lfs_mounted) {
+        esp_vfs_littlefs_unregister(littlefs_cfg.partition_label);
+        ESP_LOGI(TAG_LFS, "LittleFS unmounted");
+    }
+
+    status_event_t evt = EVT_SETUP_FAILED;
+    xQueueSend(xEventQueue, &evt, portMAX_DELAY);
+    vTaskDelete(NULL);
+
+format_device:
+    ESP_LOGW(TAG_LFS, "LittleFS formatted");
+
+    esp_vfs_littlefs_unregister(littlefs_cfg.partition_label);
+    ESP_LOGI(TAG_LFS, "LittleFS unmounted");
+
+    xEventGroupSetBits(xNVSCounterEventGroup, EVT_LFS_DONE); // Signal that LFS task is done
     vTaskDelete(NULL);
 }
 

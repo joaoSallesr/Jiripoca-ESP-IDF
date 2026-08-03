@@ -16,6 +16,10 @@ QueueHandle_t xLittleFSQueue = NULL;
 QueueHandle_t xLoraQueue     = NULL;
 QueueHandle_t xB4LaunchQueue = NULL;
 
+/* RING BUFFER */
+RingbufHandle_t xSDRingBuf  = NULL;
+RingbufHandle_t xLFSRingBuf = NULL;
+
 /* SEMAPHORE */
 SemaphoreHandle_t xI2CSem     = NULL;
 SemaphoreHandle_t xLoraAuxSem = NULL;

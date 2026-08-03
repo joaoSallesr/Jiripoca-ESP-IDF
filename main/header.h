@@ -16,6 +16,7 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 
+#include "freertos/ringbuf.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/timers.h>
@@ -260,6 +261,11 @@ typedef struct __attribute__((packed)) {
     uint32_t lfs_files;
     bool     format;
 } file_counter_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t name_check; // 4 Bytes
+    uint32_t timestamp;  // 4 Bytes
+} file_header_t;         // 8 bytes
 
 /* EVENT STRUCTURES */
 typedef enum __attribute__((packed)) {

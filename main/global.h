@@ -18,6 +18,10 @@ extern QueueHandle_t xLittleFSQueue;
 extern QueueHandle_t xLoraQueue;
 extern QueueHandle_t xB4LaunchQueue; // Queue to send data before launch phase
 
+/* RING BUFFER */
+extern RingbufHandle_t xSDRingBuf;
+extern RingbufHandle_t xLFSRingBuf;
+
 /* SEMAPHORE */
 extern SemaphoreHandle_t xI2CSem;
 extern SemaphoreHandle_t xLoraAuxSem;

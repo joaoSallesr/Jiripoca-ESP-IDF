@@ -8,6 +8,9 @@ static const char *TAG_MAIN = "MAIN";
 #define LORA_QUEUE_SIZE     1   // Overwrite queue
 #define B4LAUNCH_QUEUE_SIZE 650 // Max of 13 samples/s: 650 =~ 5s of flight data
 
+#define SD_RINGBUF_SIZE  4 * 4096
+#define LFS_RINGBUF_SIZE 4 * 4096
+
 void app_main(void) {
     ESP_LOGI(TAG_MAIN, "Starting main application");
 
@@ -17,6 +20,10 @@ void app_main(void) {
     xLittleFSQueue = xQueueCreate(LITTLEFS_QUEUE_SIZE, sizeof(save_t));
     xLoraQueue     = xQueueCreate(LORA_QUEUE_SIZE, sizeof(send_t));
     xB4LaunchQueue = xQueueCreate(B4LAUNCH_QUEUE_SIZE, sizeof(save_t));
+
+    /* Create Ring Buffer */
+    xSDRingBuf  = xRingbufferCreate(SD_RINGBUF_SIZE, RINGBUF_TYPE_BYTEBUF);
+    xLFSRingBuf = xRingbufferCreate(LFS_RINGBUF_SIZE, RINGBUF_TYPE_BYTEBUF);
 
     /* Create Mutex */
     xI2CSem = xSemaphoreCreateMutex();
