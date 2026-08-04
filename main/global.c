@@ -21,8 +21,7 @@ RingbufHandle_t xSDRingBuf  = NULL;
 RingbufHandle_t xLFSRingBuf = NULL;
 
 /* SEMAPHORE */
-SemaphoreHandle_t xI2CSem     = NULL;
-SemaphoreHandle_t xLoraAuxSem = NULL;
+SemaphoreHandle_t xI2CSem = NULL;
 
 /* MUTEX */
 portMUX_TYPE xDATAMutex = portMUX_INITIALIZER_UNLOCKED;

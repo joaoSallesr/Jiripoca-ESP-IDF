@@ -24,7 +24,6 @@ extern RingbufHandle_t xLFSRingBuf;
 
 /* SEMAPHORE */
 extern SemaphoreHandle_t xI2CSem;
-extern SemaphoreHandle_t xLoraAuxSem;
 
 /* MUTEX */
 extern portMUX_TYPE xDATAMutex;

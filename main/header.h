@@ -44,6 +44,7 @@
 #include "icm20948.h"
 #include "icm20948_i2c.h"
 #include "minmea.h"
+#include "ra01s.h"
 #include "vqf_c.h"
 
 #define BUZZER_GPIO     GPIO_NUM_38
@@ -75,7 +76,11 @@
 #define LOW  0
 
 /* GPIO */
-#define MS_CS    GPIO_NUM_12
+#define LORA_RESET GPIO_NUM_12
+#define LORA_BUSY  GPIO_NUM_13
+#define LORA_DIO1  GPIO_NUM_14
+#define LORA_CS    GPIO_NUM_15
+// #define MS_CS      GPIO_NUM_00
 #define HX_CLK   GPIO_NUM_37
 #define HX_DOUT  GPIO_NUM_38
 #define SD_DATA0 GPIO_NUM_39
@@ -87,16 +92,16 @@
 #define SD_DET   GPIO_NUM_45
 #define SD_PWR   GPIO_NUM_46
 
+/* SPI CONFIG */
+#define SPI_HOST SPI2_HOST
+#define DMA_CHAN SPI_DMA_CH_AUTO
+
 #define I2C_SPEED 400000 // 400kHz, fast mode
 
-#define GPS_BAUDRATE  9600
-#define LORA_BAUDRATE 115200
+#define GPS_BAUDRATE 9600
 
 #define GPS_RX_CHUNK  128
 #define GPS_BUFF_SIZE 4096
-
-#define LORA_RATE_MS               200 // 5Hz
-#define CONFIG_E220_AUX_TIMEOUT_MS 1200
 
 #define BMP390_I2C_ADDRESS   (0x77)
 #define ICM20948_I2C_ADDRESS (0x68)
