@@ -22,44 +22,30 @@ static void IRAM_ATTR lora_dio1_isr(void *arg) {
 }
 
 static bool lora_wait_dio1(sx126x_handle_t handle) {
-    if (xSemaphoreTake(xLoraDio1Sem, pdMS_TO_TICKS(LORA_DIO1_TIMEOUT_MS)) != pdTRUE) {
-        ESP_LOGE(TAG_LORA, "DIO1 semaphore timeout — no IRQ received");
-        handle->txActive = false; // clear even on host-side timeout
-        ClearIrqStatus(handle, SX126X_IRQ_ALL);
-        return false;
+    if (xSemaphoreTake(xLoraDio1Sem, pdMS_TO_TICKS(LORA_DIO1_TIMEOUT_MS)) == pdTRUE) {
+        return true;
     }
 
-    ESP_LOGW(TAG_LORA, "AUX timeout");
+    ESP_LOGE(TAG_LORA, "DIO1 semaphore timeout");
+    handle->txActive = false;
+    ClearIrqStatus(handle, SX126X_IRQ_ALL);
     return false;
 }
 
-static bool lora_send_packet(sx126x_handle_t lora_handle, const send_t *pkt) {
+static bool lora_send_packet(sx126x_handle_t handle, const send_t *pkt) {
     if (pkt == NULL)
         return false;
 
-    const uint8_t *buf   = (const uint8_t *)pkt;
-    const size_t   total = sizeof(send_t);
-
-    if (!lora_wait_dio1_high(pdMS_TO_TICKS(LORA_DIO1_TIMEOUT_MS))) // Waits for LoRa to be ready
-    {
-        ESP_LOGW(TAG_LORA, "LoRa busy before TX");
+    if (!LoRaSendAsync(handle, (uint8_t *)pkt, sizeof(send_t))) {
+        ESP_LOGW(TAG_LORA, "TX busy — skipping packet");
         return false;
     }
 
-    int written = uart_write_bytes(LORA_UART_NUM, (const char *)buf, total); // Writes packet to UART at once
-
-    if (written != total) {
-        ESP_LOGE(TAG_LORA, "UART write failed (%d/%d)", written, total);
+    if (!lora_wait_dio1(handle))
         return false;
-    }
 
-    if (!lora_wait_dio1_high(pdMS_TO_TICKS(LORA_DIO1_TIMEOUT_MS))) // Waits for LoRa to finish transmission
-    {
-        ESP_LOGW(TAG_LORA, "TX not confirmed by AUX");
-        return false;
-    }
-
-    return true;
+    uint16_t irq;
+    return LoRaTxWaitDone(handle, &irq);
 }
 
 static esp_err_t lora_init(sx126x_handle_t *lora_handle) {
@@ -112,7 +98,7 @@ static esp_err_t lora_init(sx126x_handle_t *lora_handle) {
     /* IRQ parameters */
     uint16_t irqMask  = SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT;
     uint16_t dio1Mask = SX126X_IRQ_TX_DONE | SX126X_IRQ_TIMEOUT;
-    SetDioIrqParams(lora_handle, irqMask, dio1Mask, 0, 0);
+    SetDioIrqParams(*lora_handle, irqMask, dio1Mask, 0, 0);
 
     ESP_LOGI(TAG_LORA, "LoRa initialized");
     return ESP_OK;
@@ -122,7 +108,8 @@ void task_lora(void *pvParameters) {
     esp_err_t       err;
     sx126x_handle_t lora_handle;
 
-    send_t     send_data;
+    send_t send_data = {0};
+
     TickType_t xLastWakeTime = xTaskGetTickCount();
 
     err = lora_init(&lora_handle);

@@ -62,11 +62,6 @@
 #define MISO            GPIO_NUM_13
 #define SCK             GPIO_NUM_12
 #define SS              GPIO_NUM_10
-#define LORA_RX         GPIO_NUM_36
-#define LORA_TX         GPIO_NUM_35
-#define LORA_AUX        GPIO_NUM_37
-#define LORA_M0         GPIO_NUM_40
-#define LORA_M1         GPIO_NUM_39
 #define I2C_SDA_IO      GPIO_NUM_8
 #define I2C_SCL_IO      GPIO_NUM_9
 #define GPS_UART_NUM    UART_NUM_1
