@@ -1,6 +1,6 @@
 #include "global.h"
 
-static const char *TAG_SYS = "SYS";
+static const char *TAG_SYS = "System";
 
 #define SETUP_TIMEOUT_MS 20000
 #define FORMAT_MODE      false
@@ -22,6 +22,23 @@ static esp_err_t setup_peripherals(void) {
     err = i2c_new_master_bus(&bus_config, &bus_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG_SYS, "I2c initialization failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    /* SPI bus configuration */
+    spi_bus_config_t spi_bus_cfg = {
+        .mosi_io_num     = SPI2_MOSI,
+        .miso_io_num     = SPI2_MISO,
+        .sclk_io_num     = SPI2_CLK,
+        .quadwp_io_num   = -1,
+        .quadhd_io_num   = -1,
+        .max_transfer_sz = 4096,
+    };
+
+    /* SPI Bus Initialization */
+    err = spi_bus_initialize(SPI_HOST, &spi_bus_cfg, DMA_CHAN);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG_SYS, "SPI initialization failed: %s", esp_err_to_name(err));
         return err;
     }
 

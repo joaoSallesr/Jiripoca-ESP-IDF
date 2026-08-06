@@ -1,6 +1,6 @@
 #include "global.h"
 
-static const char *TAG_MAIN = "MAIN";
+static const char *TAG_MAIN = "Main";
 
 #define STATUS_QUEUE_SIZE   20
 #define SD_QUEUE_SIZE       80

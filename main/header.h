@@ -58,9 +58,6 @@
 #define RBF_GPIO        GPIO_NUM_4
 #define GPS_RX          GPIO_NUM_14
 #define GPS_TX          GPIO_NUM_21
-#define MOSI            GPIO_NUM_11
-#define MISO            GPIO_NUM_13
-#define SCK             GPIO_NUM_12
 #define SS              GPIO_NUM_10
 #define I2C_SDA_IO      GPIO_NUM_8
 #define I2C_SCL_IO      GPIO_NUM_9
@@ -71,21 +68,29 @@
 #define LOW  0
 
 /* GPIO */
+#define SPI2_MISO     GPIO_NUM_8
+#define SPI2_CLK      GPIO_NUM_9
+#define SPI2_MOSI     GPIO_NUM_10
+#define MAIN_DEPLOY   GPIO_NUM_15
+#define MAIN_CHARGE   GPIO_NUM_16
+#define DROGUE_DEPLOY GPIO_NUM_18
+#define DROGUE_CHARGE GPIO_NUM_17
+#define BUZZER_GPIO   GPIO_NUM_21
+
 #define LORA_RESET GPIO_NUM_12
 #define LORA_BUSY  GPIO_NUM_13
 #define LORA_DIO1  GPIO_NUM_14
-#define LORA_CS    GPIO_NUM_15
-// #define MS_CS      GPIO_NUM_00
-#define HX_CLK   GPIO_NUM_37
-#define HX_DOUT  GPIO_NUM_38
-#define SD_DATA0 GPIO_NUM_39
-#define SD_DATA1 GPIO_NUM_40
-#define SD_DATA3 GPIO_NUM_41
-#define SD_DATA2 GPIO_NUM_42
-#define SD_CLK   GPIO_NUM_43
-#define SD_CMD   GPIO_NUM_46
-#define SD_DET   GPIO_NUM_45
-#define SD_PWR   GPIO_NUM_46
+#define LORA_CS    GPIO_NUM_20
+#define HX_CLK     GPIO_NUM_37
+#define HX_DOUT    GPIO_NUM_38
+#define SD_DATA0   GPIO_NUM_39
+#define SD_DATA1   GPIO_NUM_40
+#define SD_DATA3   GPIO_NUM_41
+#define SD_DATA2   GPIO_NUM_42
+#define SD_CLK     GPIO_NUM_43
+#define SD_CMD     GPIO_NUM_46
+#define SD_DET     GPIO_NUM_45
+#define SD_PWR     GPIO_NUM_46
 
 /* SPI CONFIG */
 #define SPI_HOST SPI2_HOST
