@@ -1,4 +1,4 @@
-#include "header.h"
+#include "global.h"
 
 #define ICM_ERROR_CHECK(x)                                                                                             \
     do {                                                                                                               \
@@ -40,9 +40,9 @@ static void icm_init(icm20948_device_t *icm_dev) {
     };
 
     // ICM20948 setup device
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_init_i2c(bus_handle, &icm_config, icm_dev));
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
 
     ESP_LOGI(TAG, "ICM20948 initialized");
 
@@ -50,9 +50,9 @@ static void icm_init(icm20948_device_t *icm_dev) {
     icm20948_status_e stat;
     for (int i = 0; i < 5; i++) // Retry 5 times
     {
-        xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+        xSemaphoreTake(xI2CSem, portMAX_DELAY);
         stat = icm20948_check_id(icm_dev);
-        xSemaphoreGive(xI2CMutex);
+        xSemaphoreGive(xI2CSem);
         if (stat == ICM_20948_STAT_OK)
             break;
         ESP_LOGD(TAG, "ICM20948 ID check failed, retry %d/5", i + 1);
@@ -61,63 +61,63 @@ static void icm_init(icm20948_device_t *icm_dev) {
     ICM_ERROR_CHECK(stat);
 
     // SW reset to make sure the device starts in a known state
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_sw_reset(icm_dev));
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
     vTaskDelay(pdMS_TO_TICKS(250));
 
     // Now wake the sensor up
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_sleep(icm_dev, false));
     ICM_ERROR_CHECK(icm20948_low_power(icm_dev, false));
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
 
     icm20948_internal_sensor_id_bm sensors =
         (icm20948_internal_sensor_id_bm)(ICM_20948_INTERNAL_ACC | ICM_20948_INTERNAL_GYR);
 
     // Set Gyro and Accelerometer to a particular sample mode
     // options: SAMPLE_MODE_CONTINUOUS; SAMPLE_MODE_CYCLED
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_set_sample_mode(icm_dev, sensors, SAMPLE_MODE_CONTINUOUS));
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
 
     // Set up sensors sample rate
     icm20948_smplrt_t smplrt;
     smplrt.a = 4;
     smplrt.g = 4; // ODR 225 Hz
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_set_sample_rate(icm_dev, sensors, smplrt));
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
 
     // Set full scale ranges for both acc and gyr
     icm20948_fss_t myfss;
     myfss.a = GPM_16;
     myfss.g = DPS_500;
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_set_full_scale(icm_dev, sensors, myfss));
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
 
     // Set up Digital Low Pass Filter configuration
     icm20948_dlpcfg_t myDLPcfg;
     myDLPcfg.a = ACC_D23BW9_N34BW4;
     myDLPcfg.g = GYR_D23BW9_N35BW9;
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_set_dlpf_cfg(icm_dev, sensors, myDLPcfg));
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
 
     // Choose whether or not to use DLPF
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_enable_dlpf(icm_dev, ICM_20948_INTERNAL_ACC, true));
     ICM_ERROR_CHECK(icm20948_enable_dlpf(icm_dev, ICM_20948_INTERNAL_GYR, true));
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
 
     // Initialize magnetometer
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_init_magnetometer(icm_dev));
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
 }
 
-void fusion_task(void *pvParameters) {
+void task_fusion(void *pvParameters) {
     icm20948_device_t icm_dev;
     icm_init(&icm_dev);
 
@@ -135,9 +135,9 @@ void fusion_task(void *pvParameters) {
     while (true) {
         xTaskDelayUntil(&xLastWakeTime, xFrequency);
         icm20948_agmt_t agmt;
-        xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+        xSemaphoreTake(xI2CSem, portMAX_DELAY);
         icm20948_status_e stat = icm20948_get_agmt(&icm_dev, &agmt);
-        xSemaphoreGive(xI2CMutex);
+        xSemaphoreGive(xI2CSem);
         if (stat == ICM_20948_STAT_OK) {
             if (initial_temp == 0)
                 initial_temp = (agmt.tmp.val * TEMP_SCALE + TEMP_OFFSET) + 273;
@@ -194,8 +194,8 @@ void fusion_task(void *pvParameters) {
     }
 
     vqf_delete(vqf);
-    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    xSemaphoreTake(xI2CSem, portMAX_DELAY);
     icm20948_sleep(&icm_dev, true);
-    xSemaphoreGive(xI2CMutex);
+    xSemaphoreGive(xI2CSem);
     vTaskDelete(NULL);
 }
