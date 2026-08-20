@@ -3,9 +3,11 @@
 static const char *TAG_LORA = "LoRa";
 
 /* LORA CONFIG */
-#define LORA_BAUDRATE       9600
-#define LORA_RATE_MS        200 // 5Hz
-#define LORA_AUX_TIMEOUT_MS 1200
+#define LORA_BAUDRATE        9600
+#define LORA_RATE_MS         200 // 5Hz
+#define LORA_AUX_TIMEOUT_MS  1200
+#define LORA_UART_TIMEOUT_MS 50
+#define LORA_WAIT_AUX_LOW_MS 5
 
 static void IRAM_ATTR lora_isr_handler(void *arg) {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -17,10 +19,11 @@ static void IRAM_ATTR lora_isr_handler(void *arg) {
 }
 
 static bool lora_wait_aux_high(void) {
+    ulTaskNotifyTake(pdTRUE, 0); // Drain stale count
+
     if (gpio_get_level(LORA_AUX))
         return true;
 
-    ulTaskNotifyTake(pdTRUE, 0); // Drain any stale count before blocking
     if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(LORA_AUX_TIMEOUT_MS)) != 0)
         return true;
 
@@ -42,11 +45,14 @@ static bool lora_send_packet(const send_t *pkt) {
     }
 
     int written = uart_write_bytes(LORA_UART_NUM, (const char *)buf, total); // Writes packet to UART at once
-
     if (written != total) {
         ESP_LOGE(TAG_LORA, "UART write failed (%d/%d)", written, total);
         return false;
     }
+
+    // Wait write_bytes and AUX LOW
+    uart_wait_tx_done(LORA_UART_NUM, pdMS_TO_TICKS(LORA_UART_TIMEOUT_MS));
+    vTaskDelay(pdMS_TO_TICKS(LORA_WAIT_AUX_LOW_MS));
 
     // Waits for LoRa to finish transmission
     if (!lora_wait_aux_high()) {
@@ -77,12 +83,16 @@ static esp_err_t e220_set_config(void) {
 
     lora_wait_aux_high(); // Wait for AUX before writing config
     int written = uart_write_bytes(LORA_UART_NUM, (const char *)config_cmd, sizeof(config_cmd));
-
     if (written != sizeof(config_cmd)) {
         ESP_LOGE(TAG_LORA, "UART write failed (%d/%d)", written, sizeof(config_cmd));
         return ESP_FAIL;
     }
 
+    // Wait write_bytes and AUX LOW
+    uart_wait_tx_done(LORA_UART_NUM, pdMS_TO_TICKS(LORA_UART_TIMEOUT_MS));
+    vTaskDelay(pdMS_TO_TICKS(LORA_WAIT_AUX_LOW_MS));
+
+    // Check response
     uint8_t response[sizeof(config_cmd)];
     lora_wait_aux_high(); // Wait for AUX before reading response
     uart_read_bytes(LORA_UART_NUM, response, sizeof(config_cmd), pdMS_TO_TICKS(100));
@@ -121,6 +131,7 @@ static esp_err_t lora_init(void) {
     gpio_set_direction(LORA_M1, GPIO_MODE_OUTPUT);
     gpio_set_level(LORA_M0, 1);
     gpio_set_level(LORA_M1, 1);
+    vTaskDelay(pdMS_TO_TICKS(LORA_WAIT_AUX_LOW_MS));
     lora_wait_aux_high();
 
     err = e220_set_config();
@@ -132,6 +143,7 @@ static esp_err_t lora_init(void) {
     // Set M0 and M1 to 0 for normal mode
     gpio_set_level(LORA_M0, 0);
     gpio_set_level(LORA_M1, 0);
+    vTaskDelay(pdMS_TO_TICKS(LORA_WAIT_AUX_LOW_MS));
     lora_wait_aux_high();
 
     ESP_LOGI(TAG_LORA, "LoRa UART initialized (baud %d)", LORA_BAUDRATE);
@@ -139,16 +151,16 @@ static esp_err_t lora_init(void) {
 }
 
 void task_lora(void *pvParameters) {
-    esp_err_t err;
+    esp_err_t  err;
+    send_t     send_data = {0};
+    TickType_t xLastWakeTime;
 
     err = lora_init();
     if (err != ESP_OK) {
         goto setup_error;
     }
 
-    send_t     send_data     = {0};
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-
+    xLastWakeTime = xTaskGetTickCount();
     while (true) {
         xQueuePeek(xLoraQueue, &send_data, 0); // Non-blocking peek, will use last data if queue hasn't been updated yet
 
