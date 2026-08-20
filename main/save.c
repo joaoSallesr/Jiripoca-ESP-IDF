@@ -22,21 +22,20 @@ void task_sd(void *pvParameters) {
 
     ESP_LOGI(TAG_SD, "Initializing SD card");
 
-    /* SDIO host driver (4-bit mode enabled, max frequency set to 20MHz) */
-    sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    /* SPI host driver (4-bit mode enabled, max frequency set to 20MHz) */
+    sdmmc_host_t          host = SDSPI_HOST_DEFAULT();
+    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
 
-    /* SDIO slot config */
-    sdmmc_slot_config_t sd_cfg = {
-        .clk     = SD_CLK,
-        .cmd     = SD_CMD,
-        .d0      = SD_DATA0,
-        .d1      = SD_DATA1,
-        .d2      = SD_DATA2,
-        .d3      = SD_DATA3,
-        .cd      = GPIO_NUM_NC,
-        .gpio_wp = GPIO_NUM_NC,
-        .width   = 4, // 4-bit mode
-        .flags   = SDMMC_SLOT_FLAG_INTERNAL_PULLUP,
+    /* SD SPI device config */
+    sdspi_device_config_t sd_cfg = {
+        .host_id          = SPI2_HOST,
+        .gpio_cs          = SD_CS,
+        .gpio_cd          = SDSPI_SLOT_NO_CD,
+        .gpio_wp          = SDSPI_SLOT_NO_WP,
+        .gpio_int         = GPIO_NUM_NC,
+        .gpio_wp_polarity = SDSPI_IO_ACTIVE_LOW,
+        .duty_cycle_pos   = 0,
+        .wait_for_miso    = 0,
     };
 
     /* Options for mounting file system */

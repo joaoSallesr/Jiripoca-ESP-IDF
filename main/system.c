@@ -11,8 +11,8 @@ static esp_err_t setup_peripherals(void) {
     /* I2C bus configuration */
     i2c_master_bus_config_t bus_config = {
         .i2c_port                     = I2C_NUM_0,
-        .sda_io_num                   = I2C_SDA_IO,
-        .scl_io_num                   = I2C_SCL_IO,
+        .sda_io_num                   = I2C_SDA,
+        .scl_io_num                   = I2C_SCL,
         .clk_source                   = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt            = 7,
         .flags.enable_internal_pullup = false,
@@ -36,7 +36,7 @@ static esp_err_t setup_peripherals(void) {
     };
 
     /* SPI Bus Initialization */
-    err = spi_bus_initialize(SPI_HOST, &spi_bus_cfg, DMA_CHAN);
+    err = spi_bus_initialize(SPI2_HOST, &spi_bus_cfg, DMA_CHAN);
     if (err != ESP_OK) {
         ESP_LOGE(TAG_SYS, "SPI initialization failed: %s", esp_err_to_name(err));
         return err;
@@ -46,8 +46,8 @@ static esp_err_t setup_peripherals(void) {
     gpio_set_direction(RBF_GPIO, GPIO_MODE_INPUT);
     gpio_set_pull_mode(RBF_GPIO, GPIO_PULLUP_ONLY);
 
-    gpio_set_direction(BUTTON_GPIO, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(BUTTON_GPIO, GPIO_PULLUP_ONLY);
+    gpio_set_direction(BOOT_GPIO, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(BOOT_GPIO, GPIO_PULLUP_ONLY);
 
     gpio_reset_pin(BUZZER_GPIO);
     gpio_set_direction(BUZZER_GPIO, GPIO_MODE_OUTPUT);
@@ -165,9 +165,9 @@ static esp_err_t setup_eskf(void) {
 }
 
 static bool check_for_format_mode(void) {
-    if (gpio_get_level(BUTTON_GPIO) == LOW) {
+    if (gpio_get_level(BOOT_GPIO) == LOW) {
         int64_t time = esp_timer_get_time();
-        while (gpio_get_level(BUTTON_GPIO) == LOW) {
+        while (gpio_get_level(BOOT_GPIO) == LOW) {
             if (esp_timer_get_time() - time > 5000000LL) {
                 ESP_LOGW("RESET", "Button pressed for 5 seconds. Formatting...");
                 // Signal format mode

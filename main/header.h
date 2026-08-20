@@ -44,56 +44,44 @@
 #include "icm20948.h"
 #include "icm20948_i2c.h"
 #include "minmea.h"
-#include "ra01s.h"
 #include "vqf_c.h"
-
-#define BUZZER_GPIO     GPIO_NUM_38
-#define LED_GPIO        GPIO_NUM_15
-#define ALED_GPIO       GPIO_NUM_6
-#define BUTTON_GPIO     GPIO_NUM_0
-#define VIN_ADC_UNIT    ADC_UNIT_1    // ADC1 +
-#define VIN_ADC_CHANNEL ADC_CHANNEL_4 // CH4 = GPIO05
-#define DROGUE_GPIO     GPIO_NUM_47
-#define MAIN_GPIO       GPIO_NUM_48
-#define RBF_GPIO        GPIO_NUM_4
-#define GPS_RX          GPIO_NUM_14
-#define GPS_TX          GPIO_NUM_21
-#define SS              GPIO_NUM_10
-#define I2C_SDA_IO      GPIO_NUM_8
-#define I2C_SCL_IO      GPIO_NUM_9
-#define GPS_UART_NUM    UART_NUM_1
-#define LORA_UART_NUM   UART_NUM_2
 
 #define HIGH 1
 #define LOW  0
 
 /* GPIO */
-#define SPI2_MISO     GPIO_NUM_8
-#define SPI2_CLK      GPIO_NUM_9
-#define SPI2_MOSI     GPIO_NUM_10
-#define MAIN_DEPLOY   GPIO_NUM_15
-#define MAIN_CHARGE   GPIO_NUM_16
-#define DROGUE_DEPLOY GPIO_NUM_18
-#define DROGUE_CHARGE GPIO_NUM_17
-#define BUZZER_GPIO   GPIO_NUM_21
+#define BOOT_GPIO   GPIO_NUM_0
+#define RBF_GPIO    GPIO_NUM_4
+#define VIN_GPIO    GPIO_NUM_5
+#define ALED_GPIO   GPIO_NUM_6
+#define LED_GPIO    GPIO_NUM_15
+#define BUZZER_GPIO GPIO_NUM_38
+#define DROGUE_GPIO GPIO_NUM_47
+#define MAIN_GPIO   GPIO_NUM_48
 
-#define LORA_RESET GPIO_NUM_12
-#define LORA_BUSY  GPIO_NUM_13
-#define LORA_DIO1  GPIO_NUM_14
-#define LORA_CS    GPIO_NUM_20
-#define HX_CLK     GPIO_NUM_37
-#define HX_DOUT    GPIO_NUM_38
-#define SD_DATA0   GPIO_NUM_39
-#define SD_DATA1   GPIO_NUM_40
-#define SD_DATA3   GPIO_NUM_41
-#define SD_DATA2   GPIO_NUM_42
-#define SD_CLK     GPIO_NUM_43
-#define SD_CMD     GPIO_NUM_46
-#define SD_DET     GPIO_NUM_45
-#define SD_PWR     GPIO_NUM_46
+#define I2C_SDA   GPIO_NUM_8
+#define I2C_SCL   GPIO_NUM_9
+#define SPI2_MOSI GPIO_NUM_11
+#define SPI2_CLK  GPIO_NUM_12
+#define SPI2_MISO GPIO_NUM_13
+
+#define SD_CS    GPIO_NUM_10
+#define GPS_TX   GPIO_NUM_14
+#define GPS_RX   GPIO_NUM_21
+#define LORA_RX  GPIO_NUM_35
+#define LORA_TX  GPIO_NUM_36
+#define LORA_AUX GPIO_NUM_37 // LoRa Interrupt
+#define LORA_M1  GPIO_NUM_39
+#define LORA_M0  GPIO_NUM_40
+
+/* UART PORT */
+#define GPS_UART_NUM  UART_NUM_1
+#define LORA_UART_NUM UART_NUM_2
+
+#define VIN_ADC_UNIT    ADC_UNIT_1    // ADC1 +
+#define VIN_ADC_CHANNEL ADC_CHANNEL_4 // CH4 = GPIO05
 
 /* SPI CONFIG */
-#define SPI_HOST SPI2_HOST
 #define DMA_CHAN SPI_DMA_CH_AUTO
 
 #define I2C_SPEED 400000 // 400kHz, fast mode
