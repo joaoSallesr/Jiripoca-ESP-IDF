@@ -76,8 +76,18 @@ static void bmp_init(bmp390_handle_t *bmp_hdl) {
 }
 
 void task_bmp(void *pvParameters) {
-    bmp390_handle_t bmp_hdl;
+    bmp390_handle_t bmp_hdl = NULL;
+    xEventGroupWaitBits(xInitEventGroup, SETUP_INIT, pdFALSE, pdTRUE, portMAX_DELAY);
+    status_event_t evt = EVT_SETUP_OK;
+    xQueueSend(xEventQueue, &evt, portMAX_DELAY);
+
     bmp_init(&bmp_hdl);
+
+    if (bmp_hdl == NULL) {
+        ESP_LOGE(TAG, "BMP390 initialization failed. Terminating task.");
+        vTaskDelete(NULL);
+        return;
+    }
 
     bmp390_sample_t sample;
 
