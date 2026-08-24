@@ -1,4 +1,6 @@
 #include "global.h"
+#include "unity.h"
+#include "unity_test_utils.h"
 
 static const char *TAG_MAIN = "Main";
 
@@ -13,6 +15,11 @@ static const char *TAG_MAIN = "Main";
 
 void app_main(void) {
     ESP_LOGI(TAG_MAIN, "Starting main application");
+
+    ESP_LOGI(TAG_MAIN, "==========================================");
+    ESP_LOGI(TAG_MAIN, "Running Unit Tests...");
+    unity_run_all_tests();
+    ESP_LOGI(TAG_MAIN, "==========================================");
 
     /* Create Queue */
     xEventQueue    = xQueueCreate(STATUS_QUEUE_SIZE, sizeof(status_event_t));
