@@ -4,3 +4,8 @@ dependencies.lock
 
 .vscode/*
 .devcontainer
+
+# IDE / Tooling artifacts
+.clangd
+compile_commands.json
+*.zip
