@@ -1,9 +1,160 @@
 #include "global.h"
-
+#define DEFAULT_PULSE_MS 500
 static const char *TAG_ACQ    = "ACQUIRE";
 static const char *TAG_DEPLOY = "DEPLOY";
 
 #define sACC_THRESHOLD 0.5f // Threshold for GPS sAcc above which xR is scaled up in eskf_update_gps
+
+#define DEFAULT_PULSE_MS             500
+#define LANDED_VELOCITY_THRESHOLD_MS 0.5f
+#define LANDED_ACCEL_THRESHOLD_MS2   1.0f
+
+static void pulse_actuator(gpio_num_t gpio, const char *log_tag, const char *log_msg, uint32_t duration_ms) {
+    if (log_msg != NULL && log_tag != NULL) {
+        ESP_LOGW(log_tag, "%s", log_msg);
+    }
+
+    uint32_t pulse_time = (duration_ms > 0) ? duration_ms : DEFAULT_PULSE_MS;
+
+    gpio_set_level(gpio, HIGH);
+    vTaskDelay(pdMS_TO_TICKS(pulse_time));
+    gpio_set_level(gpio, LOW);
+}
+
+uint32_t track_start_time(uint32_t now, uint32_t started_at, bool condition) {
+    if (!condition)
+        return 0;
+    return (started_at == 0) ? now : started_at;
+}
+
+static void confirm_status_transition(data_t *data, bool condition, uint32_t *started_at, uint32_t status_flag,
+                                      uint32_t required_duration) {
+    uint32_t now = data->time;
+
+    *started_at = track_start_time(now, *started_at, condition);
+
+    bool has_started = *started_at != 0;
+
+    bool has_reached_threshold = has_started && (now - *started_at) > required_duration;
+
+    if (has_reached_threshold) {
+        data->status |= status_flag;
+        *started_at = 0;
+    }
+}
+
+void landing_status_check(data_t *data) {
+    bool is_main_deployed = data->status & MAIN_DEPLOYED;
+    bool is_landing       = data->status & LANDING;
+
+    float current_altitude  = data->kf.x.h;
+    float vertical_velocity = data->kf.x.vz;
+
+    bool is_descending = vertical_velocity < 0.0f;
+
+    if (!is_main_deployed || is_landing || !is_descending)
+        return;
+
+    static uint32_t landing_started_at = 0;
+
+    float time_to_ground = current_altitude / -vertical_velocity;
+
+    bool landing_imminent = time_to_ground < PREPARE_FOR_LANDING_S;
+
+    confirm_status_transition(data, landing_imminent, &landing_started_at, LANDING, THRESHOLD_MS);
+}
+
+void coast_status_check(data_t *data) {
+    bool is_boost = data->status & BOOST;
+    bool is_coast = data->status & COAST;
+
+    if (!is_boost || is_coast)
+        return;
+
+    static uint32_t coast_started_at = 0;
+
+    float accel_z     = data->icm.az;
+    bool  is_coasting = accel_z < COAST_THRESHOLD_A;
+
+    confirm_status_transition(data, is_coasting, &coast_started_at, COAST, THRESHOLD_MS);
+}
+
+void boost_status_check(data_t *data) {
+    bool is_boost = data->status & BOOST;
+
+    if (is_boost)
+        return;
+    static uint32_t boost_started_at = 0;
+
+    float accel_z      = data->icm.az;
+    float vel_vertical = data->kf.x.vz;
+    bool  is_boosting  = accel_z > BOOST_THRESHOLD_A && vel_vertical > 0.0f;
+
+    confirm_status_transition(data, is_boosting, &boost_started_at, BOOST, THRESHOLD_MS);
+}
+
+void landed_status_check(data_t *data) {
+    bool is_landing = data->status & LANDING;
+    bool is_landed  = data->status & LANDED;
+
+    if (!is_landing || is_landed)
+        return;
+
+    float vertical_speed = fabsf(data->kf.x.vz);
+
+    bool is_at_rest = vertical_speed < LANDED_VELOCITY_THRESHOLD_MS && data->icm.accel < LANDED_ACCEL_THRESHOLD_MS2;
+
+    static uint32_t landed_started_at = 0;
+
+    confirm_status_transition(data, is_at_rest, &landed_started_at, LANDED, 10 * THRESHOLD_MS);
+}
+
+void main_deploy_status_check(data_t *data) {
+    bool  is_drogue_deployed     = data->status & DROGUE_DEPLOYED;
+    bool  is_main_deployed       = data->status & MAIN_DEPLOYED;
+    float current_altitude       = data->kf.x.h;
+    float vel_vertical           = data->kf.x.vz;
+    bool  is_below_main_altitude = (current_altitude < MAIN_ALTITUDE);
+    bool  is_descending          = (vel_vertical < 0);
+
+    if (!is_drogue_deployed || is_main_deployed || !is_below_main_altitude || !is_descending)
+        return;
+
+    data->status |= MAIN_DEPLOYED;
+    pulse_actuator(MAIN_GPIO, TAG_DEPLOY, "Main deployed", 0);
+}
+
+void drogue_deploy_status_check(data_t *data) {
+    bool is_armed           = data->status & ARMED;
+    bool is_coast           = data->status & COAST;
+    bool is_drogue_deployed = data->status & DROGUE_DEPLOYED;
+
+    if (!is_armed || !is_coast || is_drogue_deployed)
+        return;
+
+    float current_altitude = data->kf.x.h;
+    float apogee_altitude  = data->kf.x.apogee;
+    float vertical_speed   = fabsf(data->kf.x.vz);
+
+    bool is_near_apogee = vertical_speed < DROGUE_THRESHOLD_V;
+
+    bool            is_descending     = current_altitude < apogee_altitude;
+    uint32_t        now               = data->time;
+    static uint32_t apogee_started_at = 0;
+
+    apogee_started_at          = track_start_time(now, apogee_started_at, is_near_apogee);
+    bool has_started           = apogee_started_at != 0;
+    bool has_reached_threshold = has_started && (now - apogee_started_at) > THRESHOLD_MS;
+    bool apogee_confirmed      = has_reached_threshold;
+
+    if (!apogee_confirmed || !is_descending)
+        return;
+
+    data->status |= DROGUE_DEPLOYED;
+    apogee_started_at = 0;
+
+    pulse_actuator(DROGUE_GPIO, TAG_DEPLOY, "Drogue deployed", 0);
+}
 
 // Contains logic for state transitions and deployments
 void status_check(data_t *data) {
@@ -38,99 +189,14 @@ void status_check(data_t *data) {
         }
     }
 
-    // ===================== BOOST =====================
-    if (!(data->status & BOOST)) {
-        static uint32_t t_boost = 0;
-        // Vertical acceleration greater then threshold and positive vertical velocity
-        if (data->icm.az > BOOST_THRESHOLD_A && data->kf.x.vz > 0.0f) {
-            if (t_boost == 0)
-                t_boost = data->time;
-            // If condition holds, set BOOST flag
-            if ((data->time - t_boost) > THRESHOLD_MS)
-                data->status |= BOOST;
-        } else
-            t_boost = 0;
-        return;
-    }
+    boost_status_check(data);
+    coast_status_check(data);
 
-    // ===================== COAST =====================
-    if ((data->status & BOOST) && !(data->status & COAST)) {
-        static uint32_t t_coast = 0;
-        // Vertical acceleration less than threshold
-        if (data->icm.az < COAST_THRESHOLD_A) {
-            if (t_coast == 0)
-                t_coast = data->time;
-            // If condition holds, set COAST flag
-            if ((data->time - t_coast) > THRESHOLD_MS)
-                data->status |= COAST;
-        } else
-            t_coast = 0;
-        return;
-    }
+    drogue_deploy_status_check(data);
+    main_deploy_status_check(data);
 
-    // ===================== DROGUE DEPLOY =====================
-    if ((data->status & ARMED) && (data->status & COAST) && !(data->status & DROGUE_DEPLOYED)) {
-        static uint32_t t_apogee = 0;
-        // Absolute vertical velocity is less than threshold (near apogee)
-        if (fabsf(data->kf.x.vz) < DROGUE_THRESHOLD_V) {
-            if (t_apogee == 0)
-                t_apogee = data->time;
-            // If condition holds and altitude is less than apogee, set deploy drogue
-            if ((data->time - t_apogee) > THRESHOLD_MS && data->kf.x.h < data->kf.x.apogee) {
-                data->status |= DROGUE_DEPLOYED;
-                gpio_set_level(DROGUE_GPIO, HIGH);
-                ESP_LOGW(TAG_DEPLOY, "Drogue deployed");
-                vTaskDelay(pdMS_TO_TICKS(500));
-                gpio_set_level(DROGUE_GPIO, LOW);
-            }
-        } else
-            t_apogee = 0;
-        return;
-    }
-
-    // ===================== MAIN DEPLOY =====================
-    if ((data->status & DROGUE_DEPLOYED) && !(data->status & MAIN_DEPLOYED)) {
-        // Deploy main if altitude is less than MAIN_ALTITUDE and vertical velocity is negative (descending)
-        if (data->kf.x.h < MAIN_ALTITUDE && data->kf.x.vz < 0) {
-            data->status |= MAIN_DEPLOYED;
-            gpio_set_level(MAIN_GPIO, HIGH);
-            ESP_LOGW(TAG_DEPLOY, "Main deployed");
-            vTaskDelay(pdMS_TO_TICKS(500));
-            gpio_set_level(MAIN_GPIO, LOW);
-        }
-        return;
-    }
-
-    // ===================== LANDING =====================
-    if ((data->status & MAIN_DEPLOYED) && !(data->status & LANDING)) {
-        static uint32_t t_landing = 0;
-        // Time to impact is less than PREPARE_FOR_LANDING_S seconds (h/vz) and descending
-        if (data->kf.x.h / -data->kf.x.vz < PREPARE_FOR_LANDING_S) {
-            if (t_landing == 0)
-                t_landing = data->time;
-            // If condition holds, set LANDING flag
-            if ((data->time - t_landing) > THRESHOLD_MS)
-                data->status |= LANDING;
-            else
-                t_landing = 0;
-        }
-        return;
-    }
-
-    // ===================== LANDED =====================
-    if (data->status & LANDING && !(data->status & LANDED)) {
-        static uint32_t t_landed = 0;
-        // Absolute vertical velocity and acceleration are near zero
-        if (fabsf(data->kf.x.vz) < 0.5f && data->icm.accel < 1.0f) {
-            if (t_landed == 0)
-                t_landed = data->time;
-            // If condition holds, set LANDED flag
-            if ((data->time - t_landed) > 10 * THRESHOLD_MS)
-                data->status |= LANDED;
-            else
-                t_landed = 0;
-        }
-    }
+    landing_status_check(data);
+    landed_status_check(data);
 }
 
 static void pack_save_data(const data_t *data, save_t *save_data) {
