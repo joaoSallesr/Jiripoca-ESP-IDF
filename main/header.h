@@ -68,8 +68,8 @@
 #define SD_CS    GPIO_NUM_10
 #define GPS_TX   GPIO_NUM_14
 #define GPS_RX   GPIO_NUM_21
-#define LORA_RX  GPIO_NUM_35
-#define LORA_TX  GPIO_NUM_36
+#define LORA_TX  GPIO_NUM_35
+#define LORA_RX  GPIO_NUM_36
 #define LORA_AUX GPIO_NUM_37 // LoRa Interrupt
 #define LORA_M1  GPIO_NUM_39
 #define LORA_M0  GPIO_NUM_40
@@ -197,10 +197,9 @@ typedef struct {
     gps_sample_t      gps;
     bmp390_sample_t   bmp;
     eskf_t            kf;
+    uint8_t           voltage; // @SAVE + SEND (V * 10, e.g. 33 for 3.3V)
 
-    flight_state_t flight_state; // @SAVE + SEND (Bitfields)
-
-    uint8_t voltage; // @SAVE + SEND (V * 10, e.g. 33 for 3.3V)
+    _Atomic flight_state_t flight_state; // @SAVE + SEND (Bitfields)
 } data_t;
 
 /*
@@ -208,8 +207,7 @@ typedef struct {
  * @note Packed to avoid padding bytes.
  */
 typedef struct __attribute__((packed)) {
-    uint32_t       time;
-    flight_state_t flight_state;
+    uint32_t time;
 
     float   pressure;
     float   latitude, longitude;
@@ -221,6 +219,7 @@ typedef struct __attribute__((packed)) {
     uint8_t sAcc;    // SAcc * 10
     uint8_t fix;
 
+    _Atomic flight_state_t flight_state;
 } save_t;
 
 /*
@@ -228,8 +227,7 @@ typedef struct __attribute__((packed)) {
  * @note Packed to avoid padding bytes.
  */
 typedef struct __attribute__((packed)) {
-    uint32_t       time;
-    flight_state_t flight_state;
+    uint32_t time;
 
     float    latitude, longitude;
     uint16_t kf_altitude, kf_apogee; // m * 10 (limited to 6553.5 m)
@@ -238,6 +236,8 @@ typedef struct __attribute__((packed)) {
     uint8_t  accel;                  // |g| * 10
     uint8_t  voltage;                // V * 10
     uint8_t  fix;
+
+    _Atomic flight_state_t flight_state;
 } send_t;
 
 /* SYSTEM STRUCTURES */

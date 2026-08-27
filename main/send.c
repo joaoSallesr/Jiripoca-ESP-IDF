@@ -79,9 +79,13 @@ static esp_err_t e220_set_config(void) {
         0x00, // CRYPT_L (encryption key LSB)
     };
 
-    uart_flush(LORA_UART_NUM); // Flush UART to clear any residual data
+    // Flush UART to clear any residual data
+    uart_flush(LORA_UART_NUM);
 
-    lora_wait_aux_high(); // Wait for AUX before writing config
+    // Wait for AUX before writing config
+    vTaskDelay(pdMS_TO_TICKS(50));
+    lora_wait_aux_high();
+
     int written = uart_write_bytes(LORA_UART_NUM, (const char *)config_cmd, sizeof(config_cmd));
     if (written != sizeof(config_cmd)) {
         ESP_LOGE(TAG_LORA, "UART write failed (%d/%d)", written, sizeof(config_cmd));

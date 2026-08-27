@@ -14,6 +14,8 @@ static const char *TAG_NVS = "NVS";
 #define LFS_MAX_FLASH   0.9 // Maximum percentage of flash to be used by littlefs
 #define FILENAME_LENGTH 32
 
+#define QUEUE_STOP_THRESHOLD_MS 100
+
 void task_sd(void *pvParameters) {
     esp_err_t     err;
     sdmmc_card_t *card;
@@ -46,7 +48,7 @@ void task_sd(void *pvParameters) {
 
     /* Mount filesystem */
     ESP_LOGI(TAG_SD, "Mounting filesystem");
-    err = esp_vfs_fat_sdmmc_mount(SD_MOUNT, &host, &sd_cfg, &mount_cfg, &card);
+    err = esp_vfs_fat_sdspi_mount(SD_MOUNT, &host, &sd_cfg, &mount_cfg, &card);
     if (err != ESP_OK) {
         ESP_LOGE(TAG_SD, "Failed to mount SD card: %s.", esp_err_to_name(err));
         goto setup_error;
@@ -93,7 +95,7 @@ void task_sd(void *pvParameters) {
     while (true) {
         // ================================= REVISÃO =================================
         // Read data from queue
-        if (xQueueReceive(xSDQueue, &save_data, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(xSDQueue, &save_data, pdMS_TO_TICKS(QUEUE_STOP_THRESHOLD_MS)) == pdTRUE) {
             // If buffer is full, write to file
             if (buffer_offset + sizeof(save_t) > SD_BUFFER_SIZE) {
                 size_t w = fwrite(write_buffer, 1, SD_BUFFER_SIZE, f);
@@ -119,9 +121,7 @@ void task_sd(void *pvParameters) {
         }
 
         // Check if landing
-        portENTER_CRITICAL(&xDATALock);
-        bool landing = (data_g.flight_state & STATE_LANDING); // <---- STATE
-        portEXIT_CRITICAL(&xDATALock);
+        bool landing = (atomic_load(&data_g.flight_state) >= STATE_LANDING);
         if (landing)
             break;
     }
@@ -133,17 +133,34 @@ void task_sd(void *pvParameters) {
             ESP_LOGE(TAG_SD, "Failed to write remaining data to file");
         else
             ESP_LOGD(TAG_SD, "Remaining data written to SD card");
+
+        buffer_offset = 0;
     }
 
-    while (xQueueReceive(xB4LaunchQueue, &save_data, 0) == pdTRUE) // Write queue data to file
-    {
-        size_t w = fwrite(&save_data, 1, sizeof(save_t), f);
-        if (w != sizeof(save_t))
-            ESP_LOGE(TAG_SD, "Failed to write before launch data to file");
-        else
-            ESP_LOGD(TAG_SD, "Before launch data written to SD card");
+    uint32_t b4_samples = 0;
+
+    // Write before launch queue data to file
+    while (xQueueReceive(xB4LaunchQueue, &save_data, 0) == pdTRUE) {
+        if (buffer_offset + sizeof(save_t) > SD_BUFFER_SIZE) {
+            size_t w = fwrite(write_buffer, 1, buffer_offset, f);
+            if (w != buffer_offset)
+                ESP_LOGE(TAG_SD, "Failed to write before launch data to file");
+            buffer_offset = 0;
+        }
+        memcpy(&write_buffer[buffer_offset], &save_data, sizeof(save_t));
+        buffer_offset += sizeof(save_t);
+        b4_samples++;
     }
 
+    if (buffer_offset > 0) {
+        size_t w = fwrite(write_buffer, 1, buffer_offset, f);
+        if (w != buffer_offset)
+            ESP_LOGE(TAG_SD, "Failed to write remaining before launch data to file");
+        buffer_offset = 0;
+    }
+
+    if (b4_samples > 0)
+        ESP_LOGI(TAG_SD, "Before launch data written to SD card (%lu samples)", b4_samples);
     // ================================= REVISÃO =================================
 
     ESP_LOGW(TAG_SD, "Landed, closing file and unmounting SD card");
@@ -254,7 +271,7 @@ void task_lfs(void *pvParameters) {
     while (true) {
         _lfs_full = atomic_load_explicit(&lfs_full, memory_order_relaxed);
         // Read data from queue
-        if (xQueueReceive(xLittleFSQueue, &save_data, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(xLittleFSQueue, &save_data, pdMS_TO_TICKS(QUEUE_STOP_THRESHOLD_MS)) == pdTRUE) {
             // If buffer is full, write to file
             if (buffer_offset + sizeof(save_t) > LFS_BUFFER_SIZE) {
                 if (!_lfs_full) {
@@ -283,9 +300,7 @@ void task_lfs(void *pvParameters) {
         }
 
         // Check if landed
-        portENTER_CRITICAL(&xDATALock);
-        bool landed = (data_g.flight_state & STATE_LANDED); // <---- STATE
-        portEXIT_CRITICAL(&xDATALock);
+        bool landed = (atomic_load(&data_g.flight_state) >= STATE_LANDED);
         if (landed)
             break;
     }

@@ -128,9 +128,7 @@ void task_bmp(void *pvParameters) {
         // Notify acquire task that new data is available
         xTaskNotify(xTaskAcquire, BMP_BIT, eSetBits);
 
-        portENTER_CRITICAL(&xDATALock);
-        bool landed = (data_g.flight_state & STATE_LANDED); //<----- STATE
-        portEXIT_CRITICAL(&xDATALock);
+        bool landed = (atomic_load(&data_g.flight_state) == STATE_LANDED);
 
         if (landed)
             break;

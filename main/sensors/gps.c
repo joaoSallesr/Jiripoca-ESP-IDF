@@ -181,8 +181,7 @@ void task_gps(void *pvParameters) {
                             struct minmea_sentence_gga gga;
                             if (minmea_check(nmea_line, false) && minmea_parse_gga(&gga, nmea_line)) {
                                 if (gga.fix_quality != last_fix_quality) {
-                                    ESP_LOGI(TAG, "GGA fix_quality changed: %d -> %d", last_fix_quality,
-                                             gga.fix_quality);
+                                    ESP_LOGI(TAG, "GGA fix_quality changed: %d -> %d", last_fix_quality, gga.fix_quality);
                                     last_fix_quality = gga.fix_quality;
                                     gps.fix          = (uint8_t)gga.fix_quality;
                                 }
@@ -190,16 +189,14 @@ void task_gps(void *pvParameters) {
                                 if (gga.fix_quality == 0) {
                                     TickType_t now = xTaskGetTickCount();
                                     if ((now - last_no_fix_log) >= pdMS_TO_TICKS(30000)) {
-                                        ESP_LOGW(TAG, "No fix yet: sats=%d hdop=%.2f", gga.satellites_tracked,
-                                                 minmea_tofloat(&gga.hdop));
+                                        ESP_LOGW(TAG, "No fix yet: sats=%d hdop=%.2f", gga.satellites_tracked, minmea_tofloat(&gga.hdop));
                                         last_no_fix_log = now;
                                     }
                                 }
 
                                 else if (gga.fix_quality > 0) {
                                     if (gps.utc_time == 0) // Register GPS time once
-                                        gps.utc_time = gga.time.hours * 10000 + gga.time.minutes * 100 +
-                                                       gga.time.seconds; // HHMMSS format
+                                        gps.utc_time = gga.time.hours * 10000 + gga.time.minutes * 100 + gga.time.seconds; // HHMMSS format
 
                                     gps.latitude  = minmea_tocoord(&gga.latitude);
                                     gps.longitude = minmea_tocoord(&gga.longitude);

@@ -183,9 +183,7 @@ void task_fusion(void *pvParameters) {
         } else
             ESP_LOGE(TAG, "Get agmt failed");
 
-        portENTER_CRITICAL(&xDATALock);
-        bool landed = (data_g.flight_state & STATE_LANDED); // <---- STATE
-        portEXIT_CRITICAL(&xDATALock);
+        bool landed = (atomic_load(&data_g.flight_state) == STATE_LANDED);
         if (landed)
             break;
     }

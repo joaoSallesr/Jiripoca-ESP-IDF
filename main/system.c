@@ -5,6 +5,29 @@ static const char *TAG_SYS = "System";
 #define SETUP_TIMEOUT_MS 20000
 #define FORMAT_MODE      false
 
+const char *flight_state_to_string(flight_state_t state) {
+    switch (state) {
+    case STATE_IDLE:
+        return "IDLE";
+    case STATE_BOOST:
+        return "BOOST";
+    case STATE_COAST:
+        return "COAST";
+    case STATE_DROGUE:
+        return "DROGUE";
+    case STATE_MAIN:
+        return "MAIN";
+    case STATE_LANDING:
+        return "LANDING";
+    case STATE_LANDED:
+        return "LANDED";
+    case STATE_FATAL:
+        return "FATAL";
+    default:
+        return "UNKNOWN";
+    }
+}
+
 static esp_err_t setup_peripherals(void) {
     esp_err_t err = ESP_OK;
 
@@ -250,6 +273,9 @@ void task_setup(void *pvParameters) {
     if (err != ESP_OK)
         goto setup_error;
 
+    // TEMPORARIO
+    atomic_fetch_or(&sys_flags_g, STATUS_INITIALIZED);
+
     EventBits_t init_bits = xEventGroupWaitBits(xInitEventGroup, SETUP_INIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(SETUP_TIMEOUT_MS));
 
     if ((init_bits & SETUP_INIT) == SETUP_INIT) {
@@ -276,12 +302,6 @@ void task_setup(void *pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(100));
     } while (gpio_get_level(RBF_GPIO) == LOW); // While not armed
 
-    /*
-    portENTER_CRITICAL(&xDATALock);
-    data_g.flight_state |= STATE_ARMED; // <---- ????
-    portEXIT_CRITICAL(&xDATALock);
-    */
-
     vTaskDelete(NULL);
 
 setup_error: {
@@ -294,10 +314,7 @@ setup_error: {
 // task_buzzer_led blinks LED and beeps buzzer to indicate status
 void task_buzzer_led(void *pvParameters) {
     while (true) {
-        bool landed = false;
-
-        if (data_g.flight_state & STATE_LANDED) // <---- STATE_LANDED
-            landed = true;
+        bool landed = (atomic_load(&data_g.flight_state) == STATE_LANDED);
 
         gpio_set_level(LED_GPIO, HIGH);
         if (landed)
@@ -341,12 +358,19 @@ void task_log(void *pvParameters) {
                  "\tKalman bb (m):\t\t%.5f\r\n"
                  "\tKalman θe (rad):\t%.5f\r\n"
                  "-------------------------------------------------------------------------------------",
-                 data.time, uint8_to_binary(data.flight_state), data.voltage * 0.1f, data.bmp.pressure, data.bmp.altitude,
+                 data.time, flight_state_to_string(data.flight_state), data.voltage * 0.1f, data.bmp.pressure, data.bmp.altitude,
                  data.icm.accel_x * ACC_SCALE, data.icm.accel_y * ACC_SCALE, data.icm.accel_z * ACC_SCALE, data.icm.gyro_x * GYRO_SCALE,
                  data.icm.gyro_y * GYRO_SCALE, data.icm.gyro_z * GYRO_SCALE, data.icm.mag_x * MAG_SCALE, data.icm.mag_y * MAG_SCALE,
                  data.icm.mag_z * MAG_SCALE, data.icm.accel * 0.1f, data.gps.latitude, data.gps.longitude, data.gps.altitude,
                  data.gps.vel_vertical, data.gps.sAcc * 0.1f, data.gps.fix, data.icm.q1, data.icm.q2, data.icm.q3, data.icm.q4, data.kf.x.h,
                  data.kf.x.vz, data.kf.x.apogee, data.kf.x.ba, data.kf.x.bb, data.kf.x.θe);
         vTaskDelay(pdMS_TO_TICKS(300));
+
+        bool landed = (atomic_load(&data_g.flight_state) == STATE_LANDED);
+
+        // if (landed)
+        //     break;
     }
+
+    vTaskDelete(NULL);
 }
