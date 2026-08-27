@@ -40,10 +40,11 @@ void app_main(void) {
     xTaskCreatePinnedToCore(task_gps, "GPS", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(task_bmp, "BMP", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(task_fusion, "ICM", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL, 1);
-    xTaskCreatePinnedToCore(task_acquire, "ACQUIRE", configMINIMAL_STACK_SIZE * 4, NULL, 4, &xTaskAcquire, 0);
+    xTaskCreatePinnedToCore(task_acquire, "ACQUIRE", configMINIMAL_STACK_SIZE * 4, NULL, 10, &xTaskAcquire, 1);
+    xTaskCreatePinnedToCore(task_flight_control, "FLIGHT", configMINIMAL_STACK_SIZE * 4, NULL, 10, &xTaskFlightControl, 0);
     xTaskCreatePinnedToCore(task_sd, "SD", configMINIMAL_STACK_SIZE * 8, &file_counter_g, 3, NULL, 0);
     xTaskCreatePinnedToCore(task_lfs, "LittleFS", configMINIMAL_STACK_SIZE * 8, &file_counter_g, 3, NULL, 0);
-    xTaskCreatePinnedToCore(task_buzzer_led, "BUZZER LED", configMINIMAL_STACK_SIZE * 2, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(task_buzzer_led, "BUZZER/LED", configMINIMAL_STACK_SIZE * 2, NULL, 1, NULL, 0);
     xTaskCreatePinnedToCore(task_lora, "LORA", configMINIMAL_STACK_SIZE * 2, NULL, 3, NULL, 0);
     xTaskCreatePinnedToCore(task_adc, "ADC", configMINIMAL_STACK_SIZE * 2, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(task_nvs, "NVS", configMINIMAL_STACK_SIZE * 2, NULL, 1, NULL, 0);

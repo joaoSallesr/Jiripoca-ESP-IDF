@@ -23,8 +23,7 @@ void task_sd(void *pvParameters) {
     ESP_LOGI(TAG_SD, "Initializing SD card");
 
     /* SPI host driver (4-bit mode enabled, max frequency set to 20MHz) */
-    sdmmc_host_t          host = SDSPI_HOST_DEFAULT();
-    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
+    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
 
     /* SD SPI device config */
     sdspi_device_config_t sd_cfg = {
@@ -120,9 +119,9 @@ void task_sd(void *pvParameters) {
         }
 
         // Check if landing
-        portENTER_CRITICAL(&xDATAMutex);
-        bool landing = (data_g.status & LANDING);
-        portEXIT_CRITICAL(&xDATAMutex);
+        portENTER_CRITICAL(&xDATALock);
+        bool landing = (data_g.flight_state & STATE_LANDING); // <---- STATE
+        portEXIT_CRITICAL(&xDATALock);
         if (landing)
             break;
     }
@@ -284,9 +283,9 @@ void task_lfs(void *pvParameters) {
         }
 
         // Check if landed
-        portENTER_CRITICAL(&xDATAMutex);
-        bool landed = (data_g.status & LANDED);
-        portEXIT_CRITICAL(&xDATAMutex);
+        portENTER_CRITICAL(&xDATALock);
+        bool landed = (data_g.flight_state & STATE_LANDED); // <---- STATE
+        portEXIT_CRITICAL(&xDATALock);
         if (landed)
             break;
     }

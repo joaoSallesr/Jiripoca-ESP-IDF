@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 4.0)
 
-list(APPEND SOURCES main.c global.c acquire.c system.c save.c send.c 
+list(APPEND SOURCES main.c global.c acquire.c system.c flight_control.c save.c send.c 
                     sensors/adc.c sensors/bmp.c sensors/gps.c sensors/icm.c)
 
 list(APPEND REQUIRES esp_adc esp_ringbuf esp_timer esp_driver_i2c esp_driver_uart 

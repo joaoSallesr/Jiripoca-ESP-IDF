@@ -108,7 +108,7 @@ void task_bmp(void *pvParameters) {
 
             if (pressure_samples == CALIBRATION_SAMPLES) {
                 float mean_pressure = pressure_sum / pressure_samples;
-                sea_pressure = mean_pressure / powf((1 - KNOWN_ALTITUDE * medium_lapse_rate / sea_temp), inv_exponent);
+                sea_pressure        = mean_pressure / powf((1 - KNOWN_ALTITUDE * medium_lapse_rate / sea_temp), inv_exponent);
                 ESP_LOGI(TAG, "Sea level pressure calibrated: %.2f Pa", sea_pressure);
             }
 
@@ -128,9 +128,9 @@ void task_bmp(void *pvParameters) {
         // Notify acquire task that new data is available
         xTaskNotify(xTaskAcquire, BMP_BIT, eSetBits);
 
-        portENTER_CRITICAL(&xDATAMutex);
-        bool landed = (data_g.status & LANDED);
-        portEXIT_CRITICAL(&xDATAMutex);
+        portENTER_CRITICAL(&xDATALock);
+        bool landed = (data_g.flight_state & STATE_LANDED); //<----- STATE
+        portEXIT_CRITICAL(&xDATALock);
 
         if (landed)
             break;

@@ -5,13 +5,13 @@ static const char *TAG_DEPLOY = "DEPLOY";
 
 #define sACC_THRESHOLD 0.5f // Threshold for GPS sAcc above which xR is scaled up in eskf_update_gps
 
-// Contains logic for state transitions and deployments
+/*
 void status_check(data_t *data) {
     // ===================== SAFE MODE =====================
-    if ((data->status & ARMED) && !(data->status & BOOST) && gpio_get_level(RBF_GPIO) == LOW) {
-        portENTER_CRITICAL(&xDATAMutex);
-        data_g.status &= ~(ARMED);
-        portEXIT_CRITICAL(&xDATAMutex);
+    if ((data->flight_state & ARMED) && !(data->flight_state & BOOST) && gpio_get_level(RBF_GPIO) == LOW) {
+        portENTER_CRITICAL(&xDATALock);
+        data_g.flight_state &= ~(ARMED);
+        portEXIT_CRITICAL(&xDATALock);
 
         ESP_LOGW(TAG_ACQ, "Disarming system");
         gpio_set_level(LED_GPIO, HIGH);
@@ -22,10 +22,10 @@ void status_check(data_t *data) {
     }
 
     // ===================== ARMED =====================
-    else if (!(data->status & ARMED) && gpio_get_level(RBF_GPIO) == HIGH) {
-        portENTER_CRITICAL(&xDATAMutex);
-        data_g.status |= ARMED;
-        portEXIT_CRITICAL(&xDATAMutex);
+    else if (!(data->flight_state & ARMED) && gpio_get_level(RBF_GPIO) == HIGH) {
+        portENTER_CRITICAL(&xDATALock);
+        data_g.flight_state |= ARMED;
+        portEXIT_CRITICAL(&xDATALock);
 
         ESP_LOGW(TAG_ACQ, "System ARMED");
         for (uint8_t i = 0; i < 3; i++) {
@@ -39,7 +39,7 @@ void status_check(data_t *data) {
     }
 
     // ===================== BOOST =====================
-    if (!(data->status & BOOST)) {
+    if (!(data->flight_state & BOOST)) {
         static uint32_t t_boost = 0;
         // Vertical acceleration greater then threshold and positive vertical velocity
         if (data->icm.az > BOOST_THRESHOLD_A && data->kf.x.vz > 0.0f) {
@@ -47,14 +47,14 @@ void status_check(data_t *data) {
                 t_boost = data->time;
             // If condition holds, set BOOST flag
             if ((data->time - t_boost) > THRESHOLD_MS)
-                data->status |= BOOST;
+                data->flight_state |= BOOST;
         } else
             t_boost = 0;
         return;
     }
 
     // ===================== COAST =====================
-    if ((data->status & BOOST) && !(data->status & COAST)) {
+    if ((data->flight_state & BOOST) && !(data->flight_state & COAST)) {
         static uint32_t t_coast = 0;
         // Vertical acceleration less than threshold
         if (data->icm.az < COAST_THRESHOLD_A) {
@@ -62,14 +62,14 @@ void status_check(data_t *data) {
                 t_coast = data->time;
             // If condition holds, set COAST flag
             if ((data->time - t_coast) > THRESHOLD_MS)
-                data->status |= COAST;
+                data->flight_state |= COAST;
         } else
             t_coast = 0;
         return;
     }
 
     // ===================== DROGUE DEPLOY =====================
-    if ((data->status & ARMED) && (data->status & COAST) && !(data->status & DROGUE_DEPLOYED)) {
+    if ((data->flight_state & ARMED) && (data->flight_state & COAST) && !(data->flight_state & DROGUE_DEPLOYED)) {
         static uint32_t t_apogee = 0;
         // Absolute vertical velocity is less than threshold (near apogee)
         if (fabsf(data->kf.x.vz) < DROGUE_THRESHOLD_V) {
@@ -77,7 +77,7 @@ void status_check(data_t *data) {
                 t_apogee = data->time;
             // If condition holds and altitude is less than apogee, set deploy drogue
             if ((data->time - t_apogee) > THRESHOLD_MS && data->kf.x.h < data->kf.x.apogee) {
-                data->status |= DROGUE_DEPLOYED;
+                data->flight_state |= DROGUE_DEPLOYED;
                 gpio_set_level(DROGUE_GPIO, HIGH);
                 ESP_LOGW(TAG_DEPLOY, "Drogue deployed");
                 vTaskDelay(pdMS_TO_TICKS(500));
@@ -89,10 +89,10 @@ void status_check(data_t *data) {
     }
 
     // ===================== MAIN DEPLOY =====================
-    if ((data->status & DROGUE_DEPLOYED) && !(data->status & MAIN_DEPLOYED)) {
+    if ((data->flight_state & DROGUE_DEPLOYED) && !(data->flight_state & MAIN_DEPLOYED)) {
         // Deploy main if altitude is less than MAIN_ALTITUDE and vertical velocity is negative (descending)
         if (data->kf.x.h < MAIN_ALTITUDE && data->kf.x.vz < 0) {
-            data->status |= MAIN_DEPLOYED;
+            data->flight_state |= MAIN_DEPLOYED;
             gpio_set_level(MAIN_GPIO, HIGH);
             ESP_LOGW(TAG_DEPLOY, "Main deployed");
             vTaskDelay(pdMS_TO_TICKS(500));
@@ -102,7 +102,7 @@ void status_check(data_t *data) {
     }
 
     // ===================== LANDING =====================
-    if ((data->status & MAIN_DEPLOYED) && !(data->status & LANDING)) {
+    if ((data->flight_state & MAIN_DEPLOYED) && !(data->flight_state & LANDING)) {
         static uint32_t t_landing = 0;
         // Time to impact is less than PREPARE_FOR_LANDING_S seconds (h/vz) and descending
         if (data->kf.x.h / -data->kf.x.vz < PREPARE_FOR_LANDING_S) {
@@ -110,7 +110,7 @@ void status_check(data_t *data) {
                 t_landing = data->time;
             // If condition holds, set LANDING flag
             if ((data->time - t_landing) > THRESHOLD_MS)
-                data->status |= LANDING;
+                data->flight_state |= LANDING;
             else
                 t_landing = 0;
         }
@@ -118,7 +118,7 @@ void status_check(data_t *data) {
     }
 
     // ===================== LANDED =====================
-    if (data->status & LANDING && !(data->status & LANDED)) {
+    if (data->flight_state & LANDING && !(data->flight_state & LANDED)) {
         static uint32_t t_landed = 0;
         // Absolute vertical velocity and acceleration are near zero
         if (fabsf(data->kf.x.vz) < 0.5f && data->icm.accel < 1.0f) {
@@ -126,12 +126,13 @@ void status_check(data_t *data) {
                 t_landed = data->time;
             // If condition holds, set LANDED flag
             if ((data->time - t_landed) > 10 * THRESHOLD_MS)
-                data->status |= LANDED;
+                data->flight_state |= LANDED;
             else
                 t_landed = 0;
         }
     }
 }
+*/
 
 static void pack_save_data(const data_t *data, save_t *save_data) {
     save_data->time             = data->time;
@@ -151,7 +152,7 @@ static void pack_save_data(const data_t *data, save_t *save_data) {
     save_data->mag_x            = data->icm.mag_x;
     save_data->mag_y            = data->icm.mag_y;
     save_data->mag_z            = data->icm.mag_z;
-    save_data->status           = data->status;
+    save_data->flight_state     = data->flight_state;
     save_data->voltage          = data->voltage;
 }
 
@@ -168,18 +169,18 @@ static void pack_send_data(const data_t *data, send_t *send_data) {
     send_data->kf_vel_vertical = data->kf.x.vz;
     send_data->kf_apogee       = data->kf.x.apogee;
     send_data->accel           = data->icm.accel;
-    send_data->status          = data->status;
+    send_data->flight_state    = data->flight_state;
     send_data->voltage         = data->voltage;
 }
 
 // Sends data to SD card, LittleFS and LoRa queues
 void send_queues(const data_t *data) {
-    if (!(data->status & BOOST)) // If in idle state, do not save data to save resources
+    if (!(data->flight_state & STATE_BOOST)) // If in idle state, do not save data to save resources
     {
         save_t save_data;
         pack_save_data(data, &save_data);
-        xQueueSend(xB4LaunchQueue, &save_data, 0); // This queue will be only saved at landing
-    } else if (!(data->status & LANDING))          // If not approaching ground
+        xQueueSend(xB4LaunchQueue, &save_data, 0);    // This queue will be only saved at landing
+    } else if (!(data->flight_state & STATE_LANDING)) // If not approaching ground
     {
         save_t save_data;
         pack_save_data(data, &save_data);
@@ -203,9 +204,9 @@ void task_acquire(void *pvParameters) {
 
         data_t data;
 
-        portENTER_CRITICAL(&xDATAMutex);
+        portENTER_CRITICAL(&xDATALock);
         data = data_g;
-        portEXIT_CRITICAL(&xDATAMutex);
+        portEXIT_CRITICAL(&xDATALock);
 
         portENTER_CRITICAL(&xBMPMutex);
         data.bmp = bmp_sample_g;
@@ -233,12 +234,12 @@ void task_acquire(void *pvParameters) {
         } else
             data.time = (uint32_t)(esp_timer_get_time() / 1000UL); // ms since boot
 
-        status_check(&data); // Status check and update
+        xTaskNotifyGive(xTaskFlightControl);
 
         switch (notifiedValue) {
         case ICM_BIT:
             // Trust accelerometer less due to vibration if in boost phase
-            float xQ = data.status & BOOST ? 25.0f : 1.0f;
+            float xQ = data.flight_state & STATE_BOOST ? 25.0f : 1.0f; // <---------- STATE_BOOST
             eskf_predict(&data.kf, data.icm.az, xQ);
             break;
         case BMP_BIT:
@@ -260,8 +261,8 @@ void task_acquire(void *pvParameters) {
 
         send_queues(&data); // SD, littleFS and lora queues
 
-        portENTER_CRITICAL(&xDATAMutex);
+        portENTER_CRITICAL(&xDATALock);
         data_g = data; // Update global data with latest data
-        portEXIT_CRITICAL(&xDATAMutex);
+        portEXIT_CRITICAL(&xDATALock);
     }
 }

@@ -164,6 +164,27 @@ static esp_err_t setup_eskf(void) {
     return err;
 }
 
+// Reset pyro channel to LOW
+static void pyro_off_callback(void *arg) {
+    pyro_channel_t *ch = (pyro_channel_t *)arg;
+    gpio_set_level(ch->gpio, LOW);
+    ESP_LOGI(TAG_SYS, "%s pyro channel off", ch->label);
+}
+
+static esp_err_t setup_pyro(pyro_channel_t *ch) {
+    esp_err_t err = ESP_OK;
+
+    esp_timer_create_args_t args = {
+        .callback = pyro_off_callback,
+        .arg      = ch,
+        .name     = "pyro_off",
+    };
+
+    err = esp_timer_create(&args, &ch->timer);
+
+    return err;
+}
+
 static bool check_for_format_mode(void) {
     if (gpio_get_level(BOOT_GPIO) == LOW) {
         int64_t time = esp_timer_get_time();
@@ -187,29 +208,49 @@ static bool check_for_format_mode(void) {
     return false;
 }
 
+void task_event_check(void *pvParameters) {
+    EventBits_t evt;
+
+    while (true) {
+        if (xQueueReceive(xEventQueue, &evt, portMAX_DELAY) != pdTRUE)
+            continue;
+
+        switch (evt) {
+        default:
+            break;
+        }
+    }
+}
+
 void task_setup(void *pvParameters) {
     esp_err_t err = ESP_OK;
 
     ESP_LOGI(TAG_SYS, "GPIO configuration");
     err = setup_peripherals();
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
         goto setup_error;
-    }
 
     ESP_LOGI(TAG_SYS, "NVS flash init");
     err = setup_nvs(FORMAT_MODE);
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
         goto setup_error;
-    }
 
     ESP_LOGI(TAG_SYS, "ESKF init");
     err = setup_eskf();
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
         goto setup_error;
-    }
 
-    EventBits_t init_bits =
-        xEventGroupWaitBits(xInitEventGroup, SETUP_INIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(SETUP_TIMEOUT_MS));
+    ESP_LOGI(TAG_SYS, "Drogue pyro channel init");
+    err = setup_pyro(&pyro_drogue);
+    if (err != ESP_OK)
+        goto setup_error;
+
+    ESP_LOGI(TAG_SYS, "Main pyro channel init");
+    err = setup_pyro(&pyro_main);
+    if (err != ESP_OK)
+        goto setup_error;
+
+    EventBits_t init_bits = xEventGroupWaitBits(xInitEventGroup, SETUP_INIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(SETUP_TIMEOUT_MS));
 
     if ((init_bits & SETUP_INIT) == SETUP_INIT) {
         status_event_t evt = EVT_SETUP_OK;
@@ -235,9 +276,11 @@ void task_setup(void *pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(100));
     } while (gpio_get_level(RBF_GPIO) == LOW); // While not armed
 
-    portENTER_CRITICAL(&xDATAMutex);
-    data_g.status |= ARMED; // ?
-    portEXIT_CRITICAL(&xDATAMutex);
+    /*
+    portENTER_CRITICAL(&xDATALock);
+    data_g.flight_state |= STATE_ARMED; // <---- ????
+    portEXIT_CRITICAL(&xDATALock);
+    */
 
     vTaskDelete(NULL);
 
@@ -253,7 +296,7 @@ void task_buzzer_led(void *pvParameters) {
     while (true) {
         bool landed = false;
 
-        if (data_g.status & LANDED)
+        if (data_g.flight_state & STATE_LANDED) // <---- STATE_LANDED
             landed = true;
 
         gpio_set_level(LED_GPIO, HIGH);
@@ -271,9 +314,9 @@ void task_log(void *pvParameters) {
     data_t data;
 
     while (true) {
-        portENTER_CRITICAL(&xDATAMutex);
+        portENTER_CRITICAL(&xDATALock);
         data = data_g;
-        portEXIT_CRITICAL(&xDATAMutex);
+        portEXIT_CRITICAL(&xDATALock);
 
         ESP_LOGD("LOG",
                  "\n\tTime (ms):\t\t%lu\r\n"
@@ -298,12 +341,11 @@ void task_log(void *pvParameters) {
                  "\tKalman bb (m):\t\t%.5f\r\n"
                  "\tKalman θe (rad):\t%.5f\r\n"
                  "-------------------------------------------------------------------------------------",
-                 data.time, uint8_to_binary(data.status), data.voltage * 0.1f, data.bmp.pressure, data.bmp.altitude,
-                 data.icm.accel_x * ACC_SCALE, data.icm.accel_y * ACC_SCALE, data.icm.accel_z * ACC_SCALE,
-                 data.icm.gyro_x * GYRO_SCALE, data.icm.gyro_y * GYRO_SCALE, data.icm.gyro_z * GYRO_SCALE,
-                 data.icm.mag_x * MAG_SCALE, data.icm.mag_y * MAG_SCALE, data.icm.mag_z * MAG_SCALE,
-                 data.icm.accel * 0.1f, data.gps.latitude, data.gps.longitude, data.gps.altitude, data.gps.vel_vertical,
-                 data.gps.sAcc * 0.1f, data.gps.fix, data.icm.q1, data.icm.q2, data.icm.q3, data.icm.q4, data.kf.x.h,
+                 data.time, uint8_to_binary(data.flight_state), data.voltage * 0.1f, data.bmp.pressure, data.bmp.altitude,
+                 data.icm.accel_x * ACC_SCALE, data.icm.accel_y * ACC_SCALE, data.icm.accel_z * ACC_SCALE, data.icm.gyro_x * GYRO_SCALE,
+                 data.icm.gyro_y * GYRO_SCALE, data.icm.gyro_z * GYRO_SCALE, data.icm.mag_x * MAG_SCALE, data.icm.mag_y * MAG_SCALE,
+                 data.icm.mag_z * MAG_SCALE, data.icm.accel * 0.1f, data.gps.latitude, data.gps.longitude, data.gps.altitude,
+                 data.gps.vel_vertical, data.gps.sAcc * 0.1f, data.gps.fix, data.icm.q1, data.icm.q2, data.icm.q3, data.icm.q4, data.kf.x.h,
                  data.kf.x.vz, data.kf.x.apogee, data.kf.x.ba, data.kf.x.bb, data.kf.x.θe);
         vTaskDelay(pdMS_TO_TICKS(300));
     }

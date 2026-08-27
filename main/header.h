@@ -98,30 +98,6 @@
 #define BMP_SAMPLE_RATE_MS 50    // 20Hz
 #define GPS_SAMPLE_RATE_MS 200   // 5Hz, M8N GPS & GLONASS
 
-// AUMENTAR OS BITS DO status e mudar para estados do fogute melhor e tals
-/*#define TASK_INIT       BIT(0)
-#define SETUP_OK        BIT(1)
-#define FATAL_ERROR     BIT(2)
-#define ARMED           BIT(3)
-#define BOOST           BIT(4)
-#define COAST           BIT(5)
-#define DROGUE_DEPLOYED BIT(6)
-#define MAIN_DEPLOYED   BIT(7)
-#define LANDING         BIT(8)
-#define LANDED          BIT(9)
-*/
-
-/* STATUS FLAGS */
-#define INITIALIZED     BIT(0)
-#define ARMED           BIT(1)
-#define BOOST           BIT(2)
-#define COAST           BIT(3)
-#define DROGUE_DEPLOYED BIT(4)
-#define MAIN_DEPLOYED   BIT(5)
-#define LANDING         BIT(6)
-#define LANDED          BIT(7)
-#define NVS_EDIT        BIT(10)
-
 /* INIT FLAGS */
 // separar estados do foguete e estados de inicialização dos componentes e afins
 #define BMP_INIT  BIT(0)
@@ -141,13 +117,7 @@
 #define EVT_LFS_DONE BIT(1)
 #define EVT_NVS_DONE BIT(2)
 
-#define THRESHOLD_MS 150 // Time threshold for state transitions in ms (e.g. boost to coast, deploy drogue, etc.)
-#define PREPARE_FOR_LANDING_S                                                                                          \
-    5.0f // Time to landing to set LANDING flag in seconds (e.g. if time to landing is less than 5s)
-#define BOOST_THRESHOLD_A  2 * G // Vertical acceleration threshold to detect boost phase in m/s²
-#define COAST_THRESHOLD_A  2 * G // Vertical acceleration threshold to enter coast phase in m/s²
-#define DROGUE_THRESHOLD_V 0.5f  // Vertical velocity threshold to deploy drogue in m/s
-#define MAIN_ALTITUDE      450   // Altitude above initial to deploy main in meters
+#define PREPARE_FOR_LANDING_S 5.0f // Time to landing to set LANDING flag in seconds (e.g. if time to landing is less than 5s)
 
 #define KNOWN_ALTITUDE    715 // m, launch zone altitude
 #define KNOWN_TEMPERATURE 20  // °C, temperature at launch zone
@@ -170,6 +140,25 @@ enum SENSOR_BIT {
     ADC_BIT,
 };
 
+// Flight States
+typedef enum __attribute__((packed)) {
+    STATE_IDLE = 0,
+    STATE_BOOST,
+    STATE_COAST,
+    STATE_DROGUE,
+    STATE_MAIN,
+    STATE_LANDING,
+    STATE_LANDED,
+    STATE_FATAL,
+} flight_state_t;
+
+// Status Flags
+#define STATUS_INITIALIZED     BIT(0)
+#define STATUS_ARMED           BIT(1)
+#define STATUS_DROGUE_DEPLOYED BIT(2)
+#define STATUS_MAIN_DEPLOYED   BIT(3)
+#define STATUS_NVS_EDIT        BIT(4)
+
 // ICM20948 sample buffer
 typedef struct {
     int16_t accel_x, accel_y, accel_z; // @SAVE (LSB)
@@ -188,8 +177,7 @@ typedef struct {
     float    vel_vertical; // @SAVE + SEND (m/s)
     uint32_t utc_time;     // @INTERNAL (HHMMSS)
     uint8_t  sAcc;         // @SAVE (Speed accuracy Estimate * 10 in m/s)
-    uint8_t
-        fix; // @SAVE + SEND (GGA fix quality: 0=No Fix, 1=Standard GPS (2D/3D), 2=Differential GPS, 6=Estimated (DR))
+    uint8_t  fix;          // @SAVE + SEND (GGA fix quality: 0=No Fix, 1=Standard GPS (2D/3D), 2=Differential GPS, 6=Estimated (DR))
 } gps_sample_t;
 
 // BMP390 sample buffer
@@ -210,7 +198,8 @@ typedef struct {
     bmp390_sample_t   bmp;
     eskf_t            kf;
 
-    uint8_t status;  // @SAVE + SEND (Bitfields)
+    flight_state_t flight_state; // @SAVE + SEND (Bitfields)
+
     uint8_t voltage; // @SAVE + SEND (V * 10, e.g. 33 for 3.3V)
 } data_t;
 
@@ -219,17 +208,19 @@ typedef struct {
  * @note Packed to avoid padding bytes.
  */
 typedef struct __attribute__((packed)) {
-    uint32_t time;
-    float    pressure;
-    float    latitude, longitude;
-    float    gps_altitude, gps_vel_vertical;
-    int16_t  accel_x, accel_y, accel_z;
-    int16_t  gyro_x, gyro_y, gyro_z;
-    int16_t  mag_x, mag_y, mag_z;
-    uint8_t  status;
-    uint8_t  voltage; // V * 10
-    uint8_t  sAcc;    // SAcc * 10
-    uint8_t  fix;
+    uint32_t       time;
+    flight_state_t flight_state;
+
+    float   pressure;
+    float   latitude, longitude;
+    float   gps_altitude, gps_vel_vertical;
+    int16_t accel_x, accel_y, accel_z;
+    int16_t gyro_x, gyro_y, gyro_z;
+    int16_t mag_x, mag_y, mag_z;
+    uint8_t voltage; // V * 10
+    uint8_t sAcc;    // SAcc * 10
+    uint8_t fix;
+
 } save_t;
 
 /*
@@ -237,14 +228,15 @@ typedef struct __attribute__((packed)) {
  * @note Packed to avoid padding bytes.
  */
 typedef struct __attribute__((packed)) {
-    uint32_t time;
+    uint32_t       time;
+    flight_state_t flight_state;
+
     float    latitude, longitude;
     uint16_t kf_altitude, kf_apogee; // m * 10 (limited to 6553.5 m)
     int16_t  kf_vel_vertical;        // m/s * 10
     int16_t  q1, q2, q3, q4;         // quaternions * 10 000
     uint8_t  accel;                  // |g| * 10
-    uint8_t  status;
-    uint8_t  voltage; // V * 10
+    uint8_t  voltage;                // V * 10
     uint8_t  fix;
 } send_t;
 
@@ -260,6 +252,12 @@ typedef struct __attribute__((packed)) {
     uint32_t timestamp;  // 4 Bytes
 } file_header_t;         // 8 bytes
 
+typedef struct __attribute__((packed)) {
+    gpio_num_t         gpio;
+    const char        *label;
+    esp_timer_handle_t timer;
+} pyro_channel_t;
+
 /* EVENT STRUCTURES */
 typedef enum __attribute__((packed)) {
     EVT_INIT_READY,   // task_status finished peripheral setup
@@ -267,3 +265,7 @@ typedef enum __attribute__((packed)) {
     EVT_SETUP_FAILED, // system initialization failed
     EVT_ARM,          // system armed
 } status_event_t;
+
+typedef enum __attribute__((packed)) {
+    EVT_INIT_OK = 0,
+} flight_event_t;

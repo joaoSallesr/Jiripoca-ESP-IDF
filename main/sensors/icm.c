@@ -1,11 +1,11 @@
 #include "global.h"
 
-#define ICM_ERROR_CHECK(x)                                                                                             \
-    do {                                                                                                               \
-        icm20948_status_e err_rc_ = (x);                                                                               \
-        if (unlikely(err_rc_ != ICM_20948_STAT_OK)) {                                                                  \
-            _esp_error_check_failed(ESP_FAIL, __FILE__, __LINE__, __ASSERT_FUNC, #x);                                  \
-        }                                                                                                              \
+#define ICM_ERROR_CHECK(x)                                                                                                                 \
+    do {                                                                                                                                   \
+        icm20948_status_e err_rc_ = (x);                                                                                                   \
+        if (unlikely(err_rc_ != ICM_20948_STAT_OK)) {                                                                                      \
+            _esp_error_check_failed(ESP_FAIL, __FILE__, __LINE__, __ASSERT_FUNC, #x);                                                      \
+        }                                                                                                                                  \
     } while (0)
 
 #define GYRO_SCALE_RAD GYRO_SCALE * 3.14159265359f / 180.0f // LSB to rad/s
@@ -72,8 +72,7 @@ static void icm_init(icm20948_device_t *icm_dev) {
     ICM_ERROR_CHECK(icm20948_low_power(icm_dev, false));
     xSemaphoreGive(xI2CSem);
 
-    icm20948_internal_sensor_id_bm sensors =
-        (icm20948_internal_sensor_id_bm)(ICM_20948_INTERNAL_ACC | ICM_20948_INTERNAL_GYR);
+    icm20948_internal_sensor_id_bm sensors = (icm20948_internal_sensor_id_bm)(ICM_20948_INTERNAL_ACC | ICM_20948_INTERNAL_GYR);
 
     // Set Gyro and Accelerometer to a particular sample mode
     // options: SAMPLE_MODE_CONTINUOUS; SAMPLE_MODE_CYCLED
@@ -142,10 +141,8 @@ void task_fusion(void *pvParameters) {
             if (initial_temp == 0)
                 initial_temp = (agmt.tmp.val * TEMP_SCALE + TEMP_OFFSET) + 273;
 
-            float gyr[3] = {agmt.gyr.axes.x * GYRO_SCALE_RAD, agmt.gyr.axes.y * GYRO_SCALE_RAD,
-                            agmt.gyr.axes.z * GYRO_SCALE_RAD};
-            float acc[3] = {agmt.acc.axes.x * ACC_SCALE_MS2, agmt.acc.axes.y * ACC_SCALE_MS2,
-                            agmt.acc.axes.z * ACC_SCALE_MS2};
+            float gyr[3] = {agmt.gyr.axes.x * GYRO_SCALE_RAD, agmt.gyr.axes.y * GYRO_SCALE_RAD, agmt.gyr.axes.z * GYRO_SCALE_RAD};
+            float acc[3] = {agmt.acc.axes.x * ACC_SCALE_MS2, agmt.acc.axes.y * ACC_SCALE_MS2, agmt.acc.axes.z * ACC_SCALE_MS2};
             float mag[3] = {agmt.mag.axes.x * MAG_SCALE, agmt.mag.axes.y * MAG_SCALE, agmt.mag.axes.z * MAG_SCALE};
             vqf_update(vqf, gyr, acc, mag);
 
@@ -186,9 +183,9 @@ void task_fusion(void *pvParameters) {
         } else
             ESP_LOGE(TAG, "Get agmt failed");
 
-        portENTER_CRITICAL(&xDATAMutex);
-        bool landed = (data_g.status & LANDED);
-        portEXIT_CRITICAL(&xDATAMutex);
+        portENTER_CRITICAL(&xDATALock);
+        bool landed = (data_g.flight_state & STATE_LANDED); // <---- STATE
+        portEXIT_CRITICAL(&xDATALock);
         if (landed)
             break;
     }
