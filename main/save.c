@@ -98,8 +98,8 @@ void task_sd(void *pvParameters) {
         if (xQueueReceive(xSDQueue, &save_data, pdMS_TO_TICKS(QUEUE_STOP_THRESHOLD_MS)) == pdTRUE) {
             // If buffer is full, write to file
             if (buffer_offset + sizeof(save_t) > SD_BUFFER_SIZE) {
-                size_t w = fwrite(write_buffer, 1, SD_BUFFER_SIZE, f);
-                if (w != SD_BUFFER_SIZE)
+                size_t w = fwrite(write_buffer, 1, buffer_offset, f);
+                if (w != buffer_offset)
                     ESP_LOGE(TAG_SD, "Failed to write data to file");
                 else
                     ESP_LOGD(TAG_SD, "Data written to SD card");
@@ -281,8 +281,8 @@ void task_lfs(void *pvParameters) {
                         _lfs_full = true;
                         atomic_store_explicit(&lfs_full, true, memory_order_relaxed);
                     } else {
-                        size_t w = fwrite(buffer, 1, LFS_BUFFER_SIZE, f);
-                        if (w != LFS_BUFFER_SIZE)
+                        size_t w = fwrite(buffer, 1, buffer_offset, f);
+                        if (w != buffer_offset)
                             ESP_LOGE(TAG_LFS, "Failed to write data to file");
                         else
                             ESP_LOGD(TAG_LFS, "Data written to LittleFS");

@@ -45,20 +45,20 @@ static void pack_send_data(const data_t *data, send_t *send_data) {
 
 // Sends data to SD card, LittleFS and LoRa queues
 void send_queues(const data_t *data) {
-    if (!(data->flight_state == STATE_BOOST)) // If in idle state, do not save data to save resources
-    {
+    // Pre-launch idle data
+    if (data->flight_state == STATE_IDLE) {
         save_t save_data;
         pack_save_data(data, &save_data);
-        xQueueSend(xB4LaunchQueue, &save_data, 0);     // This queue will be only saved at landing
-    } else if (!(data->flight_state == STATE_LANDING)) // If not approaching ground
-    {
+        xQueueSend(xB4LaunchQueue, &save_data, 0); // Saved to be dumped at landing
+    } else if (data->flight_state >= STATE_BOOST && data->flight_state <= STATE_LANDING) {
         save_t save_data;
         pack_save_data(data, &save_data);
 
-        xQueueSend(xSDQueue, &save_data, 0);                        // Send to SD card queue
-        if (!atomic_load_explicit(&lfs_full, memory_order_relaxed)) // If LittleFS is not full, send to LittleFS queue
+        xQueueSend(xSDQueue, &save_data, 0); // Send to SD card queue
+        if (!atomic_load_explicit(&lfs_full, memory_order_relaxed))
             xQueueSend(xLittleFSQueue, &save_data, 0);
     }
+
     send_t send_data;
     pack_send_data(data, &send_data);
     xQueueOverwrite(xLoraQueue, &send_data); // Send to LoRa queue (length 1)
@@ -129,11 +129,12 @@ void task_acquire(void *pvParameters) {
             ESP_LOGW(TAG_ACQ, "Unknown notification received: %s", uint32_to_binary(notifiedValue));
         }
 
+        data.flight_state = atomic_load(&data_g.flight_state);
+
         send_queues(&data); // SD, littleFS and lora queues
 
         portENTER_CRITICAL(&xDATALock);
-        data.flight_state = data_g.flight_state;
-        data_g            = data; // Update global data with latest data
+        data_g = data; // Update global data with latest data
         portEXIT_CRITICAL(&xDATALock);
     }
 }

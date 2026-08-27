@@ -133,7 +133,7 @@ static void main_check(float vertical_vel, float current_alt, uint32_t current_t
 
 /* ========================================== LANDING ========================================== */
 static void landing_check(float vertical_vel, float current_alt, uint32_t current_time) {
-    if (current_alt / -vertical_vel < LANDING_THRESHOLD_S) {
+    if (vertical_vel < -1.0f && current_alt / -vertical_vel < LANDING_THRESHOLD_S) {
         if (debounce_check(current_time, &db_landing)) {
             state_transition_to(STATE_LANDING);
             // Notify?
