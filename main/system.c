@@ -68,7 +68,6 @@ static esp_err_t setup_peripherals(void) {
         ESP_LOGE(TAG_SYS, "ISR install failed: %s", esp_err_to_name(err));
         return err;
     }
-
     if (xEventQueue == NULL)
         return ESP_ERR_INVALID_ARG;
     if (xInitEventGroup == NULL)
@@ -84,7 +83,6 @@ static esp_err_t setup_peripherals(void) {
     vTaskDelay(pdMS_TO_TICKS(100));
     gpio_set_level(LED_GPIO, LOW);
     gpio_set_level(BUZZER_GPIO, LOW);
-
     return err;
 }
 
@@ -208,15 +206,11 @@ void task_setup(void *pvParameters) {
         goto setup_error;
     }
 
-    EventBits_t init_bits =
-        xEventGroupWaitBits(xInitEventGroup, SETUP_INIT, pdFALSE, pdTRUE, pdMS_TO_TICKS(SETUP_TIMEOUT_MS));
+    xEventGroupSetBits(xInitEventGroup, BUS_READY);
+    ESP_LOGI(TAG_SYS, "BUS_READY: I2C and SPI buses initialized successfully");
 
-    if ((init_bits & SETUP_INIT) == SETUP_INIT) {
-        status_event_t evt = EVT_SETUP_OK;
-        xQueueSend(xEventQueue, &evt, portMAX_DELAY);
-    } else {
-        goto setup_error;
-    }
+    status_event_t evt = EVT_SETUP_OK;
+    xQueueSend(xEventQueue, &evt, portMAX_DELAY);
 
     /* Wait for full initialization then wait for format input */
     const EventBits_t bits_to_wait = EVT_SD_DONE | EVT_LFS_DONE;

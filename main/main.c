@@ -43,6 +43,9 @@ void app_main(void) {
     /* Setup Tasks */
     xTaskCreatePinnedToCore(task_setup, "Setup", configMINIMAL_STACK_SIZE * 8, NULL, 10, NULL, 1);
 
+    /* Wait for task_setup to initialize I2C/SPI buses */
+    xEventGroupWaitBits(xInitEventGroup, BUS_READY, pdFALSE, pdTRUE, portMAX_DELAY);
+
     /* Peripheral Tasks */
     xTaskCreatePinnedToCore(task_gps, "GPS", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(task_bmp, "BMP", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL, 1);

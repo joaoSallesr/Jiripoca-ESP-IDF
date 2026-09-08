@@ -268,8 +268,3 @@ typedef enum __attribute__((packed)) {
     EVT_SETUP_FAILED, // system initialization failed
     EVT_ARM,          // system armed
 } status_event_t;
-
-/* ACQUIRE FUNCTIONS */
-uint32_t update_t_apogee(uint32_t t_apogee, const data_t *data);
-void     drogue_deploy_status_check(data_t *data);
-void     status_check(data_t *data);

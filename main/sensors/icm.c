@@ -1,11 +1,15 @@
 #include "global.h"
 
-#define ICM_ERROR_CHECK(x)                                                                                             \
-    do {                                                                                                               \
-        icm20948_status_e err_rc_ = (x);                                                                               \
-        if (unlikely(err_rc_ != ICM_20948_STAT_OK)) {                                                                  \
-            _esp_error_check_failed(ESP_FAIL, __FILE__, __LINE__, __ASSERT_FUNC, #x);                                  \
-        }                                                                                                              \
+/* Log-and-propagate: do NOT abort on sensor API errors — return ESP_FAIL so
+ * the caller can exit the task gracefully instead of crashing the CPU. */
+#define ICM_ERROR_CHECK(x)                                                    \
+    do {                                                                      \
+        icm20948_status_e _rc = (x);                                          \
+        if (unlikely(_rc != ICM_20948_STAT_OK)) {                             \
+            ESP_LOGE(TAG, "%s failed (icm status %d) at %s:%d",              \
+                     #x, (int)_rc, __FILE__, __LINE__);                       \
+            return ESP_FAIL;                                                  \
+        }                                                                     \
     } while (0)
 
 #define GYRO_SCALE_RAD GYRO_SCALE * 3.14159265359f / 180.0f // LSB to rad/s
@@ -32,7 +36,7 @@ static void rotateToWorld(float qw, float qx, float qy, float qz, float a_s[3], 
     a_w[2] = R31 * a_s[0] + R32 * a_s[1] + R33 * a_s[2] - G;
 }
 
-static void icm_init(icm20948_device_t *icm_dev) {
+static esp_err_t icm_init(icm20948_device_t *icm_dev) {
     // ICM20948 struct setup
     icm20948_config_i2c_t icm_config = {
         .i2c_addr        = ICM20948_I2C_ADDRESS,
@@ -115,11 +119,17 @@ static void icm_init(icm20948_device_t *icm_dev) {
     xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_init_magnetometer(icm_dev));
     xSemaphoreGive(xI2CSem);
+
+    return ESP_OK;
 }
 
 void task_fusion(void *pvParameters) {
     icm20948_device_t icm_dev;
-    icm_init(&icm_dev);
+    if (icm_init(&icm_dev) != ESP_OK) {
+        ESP_LOGE(TAG, "ICM20948 initialization failed — task_fusion will not run");
+        vTaskDelete(NULL);
+        return;
+    }
 
     TickType_t       xLastWakeTime;
     const TickType_t xFrequency = pdMS_TO_TICKS(ICM_SAMPLE_RATE_S * 1000);
