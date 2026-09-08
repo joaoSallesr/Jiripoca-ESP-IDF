@@ -330,4 +330,6 @@ void task_acquire(void *pvParameters) {
         data_g = data; // Update global data with latest data
         portEXIT_CRITICAL(&xDATAMutex);
     }
+    bmp280_delete(dev_hdl);
+    vTaskDelete(NULL);
 }

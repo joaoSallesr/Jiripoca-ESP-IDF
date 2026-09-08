@@ -1,11 +1,15 @@
 build/
+managed_components/
 sdkconfig.old
 dependencies.lock
 
 .vscode/*
-.devcontainer
+.devcontainer/
 
 # IDE / Tooling artifacts
 .clangd
 compile_commands.json
-*.zip
+*.zip
+*.DS_Store
+*/.cache
+debug.log
