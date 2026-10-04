@@ -1,76 +1,81 @@
 #include "global.h"
 
-#define CALIBRATION_SAMPLES 20
-
 static const char *TAG = "GPS";
 
+#define CALIBRATION_SAMPLES 20
+
+/* UBX CONFIG */
+#define UBX_SYNC        0xB562
+#define UBX_MAX_PAYLOAD 64
+#define UBX_HDR_LEN     4 // class, id, len_l, len_h
+#define UBX_CK_LEN      2
+
+static void ubx_checksum(const uint8_t *frame, uint16_t len, uint8_t *ck_a, uint8_t *ck_b) {
+    uint8_t a_sum = 0, b_sum = 0;
+
+    for (int i = 0; i < len; i++) {
+        a_sum += frame[i];
+        b_sum += a_sum;
+    }
+
+    *ck_a = a_sum;
+    *ck_b = b_sum;
+}
+
+static void ubx_handle_message(uint8_t class, uint8_t id, uint16_t len, const uint8_t *payload, gps_sample_t *gps) {
+    /* NAV-VELNED */
+    if (class == 0x01 && id == 0x12 && len == 36) {
+        int32_t  velD;                             // I4
+        uint32_t sAcc;                             // U4
+        memcpy(&velD, &payload[12], sizeof(velD)); // velD in cm/s (down positive)
+        memcpy(&sAcc, &payload[28], sizeof(sAcc)); // sAcc in cm/s
+        if (sAcc > 2550)
+            sAcc = 2550;                                  // Constraint for uint8_t storage (255.0 m/s * 10)
+        gps->vel_vertical = -(velD * 0.01f);              // m/s (up positive)
+        gps->sAcc         = (uint8_t)roundf(sAcc * 0.1f); // m/s * 10
+    }
+}
+
 static void ubx_parse_byte(uint8_t c, gps_sample_t *gps) {
-    static uint8_t  state = 0;
-    static uint8_t  class, id;
+    static enum { SYNC, HEADER, BODY } state = SYNC;
+
+    static uint16_t sync;
+    static uint8_t  frame[UBX_HDR_LEN + UBX_MAX_PAYLOAD + UBX_CK_LEN]; // GPS message buffer
     static uint16_t len, cnt;
-    static uint8_t  ck_a, ck_b;
-    static uint8_t  payload[64]; // NAV-VELNED has 36 bytes
+    static uint8_t  checksum[2];
 
     switch (state) {
-    case 0:
-        if (c == 0xB5)
-            state = 1;
+    /* Check Sync Char 1-2 */
+    case SYNC:
+        sync = (sync << 8) | c;
+        if (sync == UBX_SYNC) {
+            cnt   = 0;
+            state = HEADER;
+        }
         break;
-    case 1:
-        state = (c == 0x62) ? 2 : 0;
-        break;
-    case 2:
-        class = c;
-        ck_a  = c;
-        ck_b  = c;
-        state = 3;
-        break;
-    case 3:
-        id = c;
-        ck_a += c;
-        ck_b += ck_a;
-        state = 4;
-        break;
-    case 4:
-        len = c;
-        ck_a += c;
-        ck_b += ck_a;
-        state = 5;
-        break;
-    case 5:
-        len |= (c << 8);
-        ck_a += c;
-        ck_b += ck_a;
-        cnt   = 0;
-        state = 6;
-        break;
-    case 6:
-        if (cnt < sizeof(payload))
-            payload[cnt] = c;
-        ck_a += c;
-        ck_b += ck_a;
-        cnt++;
-        if (cnt >= len)
-            state = 7;
-        break;
-    case 7:
-        state = (c == ck_a) ? 8 : 0;
-        break;
-    case 8:
-        state = 0;
-        if (c != ck_b)
-            break;
 
-        // NAV-VELNED, supported on: u-blox 7 firmware version 1.00
-        if (class == 0x01 && id == 0x12 && len >= 36) {
-            int32_t  velD;                                 // I4
-            uint32_t sAcc;                                 // U4
-            memcpy(&velD, &payload[12], sizeof(int32_t));  // velD in cm/s (down positive)
-            memcpy(&sAcc, &payload[28], sizeof(uint32_t)); // sAcc in cm/s
-            if (sAcc > 2550)
-                sAcc = 2550;                                  // Constraint for uint8_t storage (255.0 m/s * 10)
-            gps->vel_vertical = -(velD * 0.01f);              // m/s (up positive)
-            gps->sAcc         = (uint8_t)roundf(sAcc * 0.1f); // m/s * 10
+    /* Check Message Header */
+    case HEADER:
+        frame[cnt++] = c;
+        if (cnt == UBX_HDR_LEN) {
+            len = frame[2] | (frame[3] << 8);
+            if (len > UBX_MAX_PAYLOAD) {
+                state = SYNC;
+                cnt   = 0;
+                break;
+            }
+            state = BODY;
+        }
+        break;
+
+    /* Check Message Payload and Checksum */
+    case BODY:
+        frame[cnt++] = c;
+        if (cnt == UBX_HDR_LEN + len + UBX_CK_LEN) {
+            ubx_checksum(frame, UBX_HDR_LEN + len, &checksum[0], &checksum[1]);
+            if (checksum[0] == frame[cnt - 2] && checksum[1] == frame[cnt - 1])
+                ubx_handle_message(frame[0], frame[1], len, &frame[UBX_HDR_LEN], gps);
+            state = SYNC;
         }
         break;
     }
