@@ -124,7 +124,7 @@ static void gps_init(void) {
     };
 
     ESP_ERROR_CHECK(uart_param_config(GPS_UART_NUM, &uart_config));
-    ESP_ERROR_CHECK(uart_set_pin(GPS_UART_NUM, GPS_TX, GPS_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_set_pin(GPS_UART_NUM, GPS_RX, GPS_TX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     ESP_ERROR_CHECK(uart_driver_install(GPS_UART_NUM, GPS_BUFF_SIZE, 0, 0, NULL, 0));
 
     ESP_LOGI(TAG, "GPS UART initialized (baud %d)", GPS_BAUDRATE);
@@ -218,11 +218,12 @@ void task_gps(void *pvParameters) {
 
                                     // Update global GPS sample
                                     portENTER_CRITICAL(&xGPSMutex);
-                                    gps_sample_g.utc_time     = gps.utc_time;
                                     gps_sample_g.latitude     = gps.latitude;
                                     gps_sample_g.longitude    = gps.longitude;
                                     gps_sample_g.altitude     = gps.altitude;
                                     gps_sample_g.vel_vertical = gps.vel_vertical;
+                                    gps_sample_g.utc_time     = gps.utc_time;
+                                    gps_sample_g.sAcc         = gps.sAcc;
                                     gps_sample_g.fix          = gps.fix;
                                     portEXIT_CRITICAL(&xGPSMutex);
 

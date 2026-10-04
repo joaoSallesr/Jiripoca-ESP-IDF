@@ -66,8 +66,8 @@
 #define SPI2_MISO GPIO_NUM_13
 
 #define SD_CS    GPIO_NUM_10
-#define GPS_TX   GPIO_NUM_14
-#define GPS_RX   GPIO_NUM_21
+#define GPS_TX   GPIO_NUM_14 // UART_RX
+#define GPS_RX   GPIO_NUM_21 // UART_TX
 #define LORA_TX  GPIO_NUM_35
 #define LORA_RX  GPIO_NUM_36
 #define LORA_AUX GPIO_NUM_37 // LoRa Interrupt
