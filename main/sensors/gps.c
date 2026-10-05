@@ -185,7 +185,7 @@ static bool gps_configure(void) {
     for (size_t i = 0; i < sizeof(gps_config) / sizeof(gps_config[0]); i++) {
         const ubx_cmd_t *c = &gps_config[i];
         if (!gps_send_wait_ack(c->class, c->id, c->payload, c->len)) {
-            ESP_LOGE(TAG_GPS, "Config %u failed (0x%02X 0x%02X)", (uint32_t)i, c->class, c->id);
+            ESP_LOGE(TAG_GPS, "Config %lu failed (0x%02X 0x%02X)", (uint32_t)i, c->class, c->id);
             ok = false;
         }
     }
@@ -261,6 +261,12 @@ void task_gps(void *pvParameters) {
                                     ESP_LOGI(TAG_GPS, "GGA fix_quality changed: %d -> %d", last_fix_quality, gga.fix_quality);
                                     last_fix_quality = gga.fix_quality;
                                     gps.fix          = (uint8_t)gga.fix_quality;
+
+                                    if (gga.fix_quality == 0) {
+                                        portENTER_CRITICAL(&xGPSMutex);
+                                        gps_sample_g.fix = 0;
+                                        portEXIT_CRITICAL(&xGPSMutex);
+                                    }
                                 }
 
                                 if (gga.fix_quality == 0) {
@@ -270,10 +276,6 @@ void task_gps(void *pvParameters) {
                                                  minmea_tofloat(&gga.hdop));
                                         last_no_fix_log = now;
                                     }
-
-                                    portENTER_CRITICAL(&xGPSMutex);
-                                    gps_sample_g.fix = 0;
-                                    portEXIT_CRITICAL(&xGPSMutex);
                                 }
 
                                 else if (gga.fix_quality > 0) {
