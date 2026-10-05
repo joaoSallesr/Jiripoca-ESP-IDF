@@ -42,7 +42,7 @@ void app_main(void) {
     }
 
     /* Peripheral Tasks */
-    xTaskCreatePinnedToCore(task_gps, "GPS", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(task_gps, "GPS", configMINIMAL_STACK_SIZE * 8, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(task_bmp, "BMP", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(task_fusion, "ICM", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(task_acquire, "ACQUIRE", configMINIMAL_STACK_SIZE * 4, NULL, 10, &xTaskAcquire, 1);

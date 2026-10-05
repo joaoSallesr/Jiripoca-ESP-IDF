@@ -1,14 +1,55 @@
 #include "global.h"
 
-static const char *TAG = "GPS";
+static const char *TAG_GPS = "GPS";
 
+/* GPS CONFIGURATION */
 #define CALIBRATION_SAMPLES 20
 
-/* UBX CONFIG */
-#define UBX_SYNC        0xB562
+#define UBX_SYNC1       0xB5
+#define UBX_SYNC2       0x62
 #define UBX_MAX_PAYLOAD 64
 #define UBX_HDR_LEN     4 // class, id, len_l, len_h
 #define UBX_CK_LEN      2
+
+#define UBX_ACK_TIMEOUT_MS 1500
+#define UBX_ACK_RETRIES    3
+
+/* GPS STRUCTURES */
+typedef struct {
+    uint8_t class;
+    uint8_t id;
+    uint8_t payload[UBX_MAX_PAYLOAD];
+    uint8_t len;
+} ubx_cmd_t;
+
+typedef enum {
+    ACK_NONE,
+    ACK_OK,
+    ACK_NAK,
+} ubx_ack_t;
+
+static struct {
+    uint8_t   class;
+    uint8_t   id;
+    ubx_ack_t response;
+} ack_state;
+
+static const ubx_cmd_t gps_config[] = {
+    /* {class, id, payload, len} */
+
+    // CFG-MSG: disable unused NMEA sentences (class 0xF0, id, rate 0)
+    {0x06, 0x01, {0xF0, 0x03, 0x00}, 3}, // GSV off
+    {0x06, 0x01, {0xF0, 0x02, 0x00}, 3}, // GSA off
+    {0x06, 0x01, {0xF0, 0x04, 0x00}, 3}, // RMC off
+    {0x06, 0x01, {0xF0, 0x05, 0x00}, 3}, // VTG off
+    {0x06, 0x01, {0xF0, 0x01, 0x00}, 3}, // GLL off
+
+    // CFG-MSG: enable NAV-VELNED
+    {0x06, 0x01, {0x01, 0x12, 0x01}, 3},
+
+    // CFG-RATE: 200 ms, navRate 1, GPS time
+    {0x06, 0x08, {GPS_SAMPLE_RATE_MS & 0xFF, GPS_SAMPLE_RATE_MS >> 8, 0x01, 0x00, 0x01, 0x00}, 6},
+};
 
 static void ubx_checksum(const uint8_t *frame, uint16_t len, uint8_t *ck_a, uint8_t *ck_b) {
     uint8_t a_sum = 0, b_sum = 0;
@@ -22,7 +63,14 @@ static void ubx_checksum(const uint8_t *frame, uint16_t len, uint8_t *ck_a, uint
     *ck_b = b_sum;
 }
 
-static void ubx_handle_message(uint8_t class, uint8_t id, uint16_t len, const uint8_t *payload, gps_sample_t *gps) {
+static void ubx_handle_message(uint8_t class, uint8_t id, const uint8_t *payload, uint16_t len, gps_sample_t *gps) {
+    /* ACK / NAK */
+    if (class == 0x05 && len == 2 && (id == 0x01 || id == 0x00)) {
+        if (payload[0] == ack_state.class && payload[1] == ack_state.id)
+            ack_state.response = (id == 0x01) ? ACK_OK : ACK_NAK;
+        return;
+    }
+
     /* NAV-VELNED */
     if (class == 0x01 && id == 0x12 && len == 36) {
         int32_t  velD;                             // I4
@@ -48,7 +96,7 @@ static void ubx_parse_byte(uint8_t c, gps_sample_t *gps) {
     /* Check Sync Char 1-2 */
     case SYNC:
         sync = (sync << 8) | c;
-        if (sync == UBX_SYNC) {
+        if (sync == (UBX_SYNC1 << 8 | UBX_SYNC2)) {
             cnt   = 0;
             state = HEADER;
         }
@@ -61,7 +109,6 @@ static void ubx_parse_byte(uint8_t c, gps_sample_t *gps) {
             len = frame[2] | (frame[3] << 8);
             if (len > UBX_MAX_PAYLOAD) {
                 state = SYNC;
-                cnt   = 0;
                 break;
             }
             state = BODY;
@@ -74,49 +121,75 @@ static void ubx_parse_byte(uint8_t c, gps_sample_t *gps) {
         if (cnt == UBX_HDR_LEN + len + UBX_CK_LEN) {
             ubx_checksum(frame, UBX_HDR_LEN + len, &checksum[0], &checksum[1]);
             if (checksum[0] == frame[cnt - 2] && checksum[1] == frame[cnt - 1])
-                ubx_handle_message(frame[0], frame[1], len, &frame[UBX_HDR_LEN], gps);
+                ubx_handle_message(frame[0], frame[1], &frame[UBX_HDR_LEN], len, gps);
             state = SYNC;
         }
         break;
     }
 }
 
-static void gps_enable_nav_velned(void) {
-    const uint8_t ubx_enable_nav_velned[] = {
-        // supported on: u-blox 7 firmware version 1.00
-        0xB5, 0x62, // message header
-        0x06, 0x01, // CFG-MSG
-        0x03, 0x00, // payload length (3 bytes)
-        0x01,       // msgClass (NAV)
-        0x12,       // msgID (VELNED)
-        0x01,       // rate (enable)
-        0x1E, 0x67  // checksum
-    };
+static void ubx_send(uint8_t class, uint8_t id, const uint8_t *payload, uint16_t len) {
+    if (len > UBX_MAX_PAYLOAD)
+        return;
 
-    uart_write_bytes(GPS_UART_NUM, (const char *)ubx_enable_nav_velned, sizeof(ubx_enable_nav_velned));
+    uint8_t frame[2 + UBX_HDR_LEN + UBX_MAX_PAYLOAD + UBX_CK_LEN];
+
+    frame[0] = UBX_SYNC1;
+    frame[1] = UBX_SYNC2;
+    frame[2] = class;
+    frame[3] = id;
+    frame[4] = len & 0xFF; // len_l
+    frame[5] = len >> 8;   // len_h
+    memcpy(&frame[6], payload, len);
+    ubx_checksum(&frame[2], UBX_HDR_LEN + len, &frame[6 + len], &frame[7 + len]);
+    uart_write_bytes(GPS_UART_NUM, frame, 8 + len);
 }
 
-static void gps_set_rate(void) {
-    const uint8_t ubx_set_rate[] = {
-        // supported on: u-blox 7 firmware version 1.00
-        0xB5,
-        0x62, // message header
-        0x06,
-        0x08, // CFG-RATE
-        0x06,
-        0x00, // payload length (6 bytes)
-        GPS_SAMPLE_RATE_MS,
-        0x00, // measRate MSB (0xC8, 0x00)
-        0x01,
-        0x00, // navRate (1 cycle, more cycles only supported on: u-blox 8 / u-blox M8 from protocol version 15 up to
-              // version 23.01)
-        0x01,
-        0x00, // timeRef (GPS)
-        0xDE,
-        0x6A // checksum
-    };
+static bool gps_send_wait_ack(uint8_t class, uint8_t id, const uint8_t *payload, uint16_t len) {
+    gps_sample_t dummy = {0};
+    uint8_t      buf[GPS_RX_CHUNK];
 
-    uart_write_bytes(GPS_UART_NUM, (const char *)ubx_set_rate, sizeof(ubx_set_rate));
+    for (int attempt = 0; attempt < UBX_ACK_RETRIES; attempt++) {
+        ack_state.class    = class;
+        ack_state.id       = id;
+        ack_state.response = ACK_NONE;
+
+        uart_flush_input(GPS_UART_NUM); // drop stale bytes
+        ubx_send(class, id, payload, len);
+
+        TickType_t start = xTaskGetTickCount();
+        while (ack_state.response == ACK_NONE && (xTaskGetTickCount() - start) < pdMS_TO_TICKS(UBX_ACK_TIMEOUT_MS)) {
+            int n = uart_read_bytes(GPS_UART_NUM, buf, sizeof(buf), pdMS_TO_TICKS(20));
+            for (int i = 0; i < n; i++)
+                ubx_parse_byte(buf[i], &dummy);
+        }
+
+        if (ack_state.response == ACK_OK) {
+            ESP_LOGD(TAG_GPS, "ACK 0x%02X 0x%02X after %lu ms", class, id, (uint32_t)((xTaskGetTickCount() - start) * portTICK_PERIOD_MS));
+            return true;
+        }
+
+        if (ack_state.response == ACK_NAK) {
+            ESP_LOGE(TAG_GPS, "NAK for 0x%02X 0x%02X", class, id);
+            return false; // rejected
+        }
+
+        ESP_LOGW(TAG_GPS, "No ACK for 0x%02X 0x%02X (attempt %d/%d)", class, id, attempt + 1, UBX_ACK_RETRIES);
+    }
+
+    return false;
+}
+
+static bool gps_configure(void) {
+    bool ok = true;
+    for (size_t i = 0; i < sizeof(gps_config) / sizeof(gps_config[0]); i++) {
+        const ubx_cmd_t *c = &gps_config[i];
+        if (!gps_send_wait_ack(c->class, c->id, c->payload, c->len)) {
+            ESP_LOGE(TAG_GPS, "Config %u failed (0x%02X 0x%02X)", (uint32_t)i, c->class, c->id);
+            ok = false;
+        }
+    }
+    return ok;
 }
 
 static void gps_init(void) {
@@ -132,12 +205,11 @@ static void gps_init(void) {
     ESP_ERROR_CHECK(uart_set_pin(GPS_UART_NUM, GPS_RX, GPS_TX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     ESP_ERROR_CHECK(uart_driver_install(GPS_UART_NUM, GPS_BUFF_SIZE, 0, 0, NULL, 0));
 
-    ESP_LOGI(TAG, "GPS UART initialized (baud %d)", GPS_BAUDRATE);
+    ESP_LOGI(TAG_GPS, "GPS UART initialized (baud %d)", GPS_BAUDRATE);
     vTaskDelay(pdMS_TO_TICKS(200)); // Wait for GPS to stabilize
 
-    gps_enable_nav_velned();
-    vTaskDelay(pdMS_TO_TICKS(50)); // Short delay
-    gps_set_rate();                // Could check ACK for both commands, for now it's assumed to work
+    if (!gps_configure())
+        ESP_LOGE(TAG_GPS, "GPS configuration failed");
 }
 
 void task_gps(void *pvParameters) {
@@ -177,7 +249,7 @@ void task_gps(void *pvParameters) {
                         nmea_line[nmea_pos]         = '\0';
                         enum minmea_sentence_id sid = minmea_sentence_id(nmea_line, false);
                         if (!logged_first_sentence && sid != MINMEA_INVALID && sid != MINMEA_UNKNOWN) {
-                            ESP_LOGI(TAG, "First valid NMEA sentence received: %s", minmea_sentence(sid));
+                            ESP_LOGI(TAG_GPS, "First valid NMEA sentence received: %s", minmea_sentence(sid));
                             logged_first_sentence = true;
                         }
 
@@ -186,7 +258,7 @@ void task_gps(void *pvParameters) {
                             struct minmea_sentence_gga gga;
                             if (minmea_check(nmea_line, false) && minmea_parse_gga(&gga, nmea_line)) {
                                 if (gga.fix_quality != last_fix_quality) {
-                                    ESP_LOGI(TAG, "GGA fix_quality changed: %d -> %d", last_fix_quality, gga.fix_quality);
+                                    ESP_LOGI(TAG_GPS, "GGA fix_quality changed: %d -> %d", last_fix_quality, gga.fix_quality);
                                     last_fix_quality = gga.fix_quality;
                                     gps.fix          = (uint8_t)gga.fix_quality;
                                 }
@@ -194,9 +266,14 @@ void task_gps(void *pvParameters) {
                                 if (gga.fix_quality == 0) {
                                     TickType_t now = xTaskGetTickCount();
                                     if ((now - last_no_fix_log) >= pdMS_TO_TICKS(30000)) {
-                                        ESP_LOGW(TAG, "No fix yet: sats=%d hdop=%.2f", gga.satellites_tracked, minmea_tofloat(&gga.hdop));
+                                        ESP_LOGW(TAG_GPS, "No fix yet: sats=%d hdop=%.2f", gga.satellites_tracked,
+                                                 minmea_tofloat(&gga.hdop));
                                         last_no_fix_log = now;
                                     }
+
+                                    portENTER_CRITICAL(&xGPSMutex);
+                                    gps_sample_g.fix = 0;
+                                    portEXIT_CRITICAL(&xGPSMutex);
                                 }
 
                                 else if (gga.fix_quality > 0) {
@@ -215,7 +292,7 @@ void task_gps(void *pvParameters) {
 
                                             if (altitude_samples == CALIBRATION_SAMPLES) {
                                                 initial_altitude = altitude_sum / altitude_samples;
-                                                ESP_LOGI(TAG, "Initial altitude measured: %.2f m", initial_altitude);
+                                                ESP_LOGI(TAG_GPS, "Initial altitude measured: %.2f m", initial_altitude);
                                             }
                                             break; // Set initial altitude before using GPS altitude data
                                         }
@@ -231,6 +308,8 @@ void task_gps(void *pvParameters) {
                                     gps_sample_g.sAcc         = gps.sAcc;
                                     gps_sample_g.fix          = gps.fix;
                                     portEXIT_CRITICAL(&xGPSMutex);
+
+                                    gps.utc_time = 1;
 
                                     xTaskNotify(xTaskAcquire, GPS_BIT,
                                                 eSetBits); // Notify acquire task that new data is available
