@@ -44,9 +44,9 @@ static struct {
 } ack_state;
 
 static struct {
-    uint8_t  numSV; // satellites used
+    uint8_t  numSV; // Satellites used
     uint16_t pDOP;  // x0.01
-    bool     valid;
+    bool     valid; // Connection established
 } gps_info;
 
 static struct {
@@ -81,11 +81,14 @@ static const ubx_cmd_t gps_config[] = {
     // CFG-RATE: 200 ms, navRate 1, GPS time
     {0x06, 0x08, {GPS_SAMPLE_RATE_MS & 0xFF, GPS_SAMPLE_RATE_MS >> 8, 0x01, 0x00, 0x01, 0x00}, 6},
 
+    // CFG-NAV5: dynModel only, Pedestrian (3)
+    {0x06, 0x24, {0x01, 0x00, 0x03}, 36},
+
     // CFG-NAV5: dynModel only, Airborne <4g (8)
-    {0x06, 0x24, {0x01, 0x00, 0x08}, 36},
+    // {0x06, 0x24, {0x01, 0x00, 0x08}, 36},
 };
 
-static bool altitude_calibration(void) {
+static inline bool altitude_calibration(void) {
     bool idle = atomic_load(&data_g.flight_state) == STATE_IDLE;
 
     if (idle && alt_cal.cnt < CAL_MAX_SAMPLES && alt_cal.vacc_mm < CAL_VACC_MAX_MM) {
