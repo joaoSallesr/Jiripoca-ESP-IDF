@@ -96,7 +96,7 @@
 
 #define ICM_SAMPLE_RATE_S  0.01f // 100Hz
 #define BMP_SAMPLE_RATE_MS 50    // 20Hz
-#define GPS_SAMPLE_RATE_MS 200   // 5Hz, M8N GPS & GLONASS
+#define GPS_SAMPLE_RATE_MS 200   // 5Hz
 
 /* INIT FLAGS */
 // separar estados do foguete e estados de inicialização dos componentes e afins
@@ -171,13 +171,12 @@ typedef struct {
 
 // GPS sample buffer
 typedef struct {
-    float    latitude;     // @SAVE + SEND (°)
-    float    longitude;    // @SAVE + SEND (°)
-    float    altitude;     // @SAVE + SEND (m above known altitude)
-    float    vel_vertical; // @SAVE + SEND (m/s)
-    uint32_t utc_time;     // @INTERNAL (HHMMSS)
-    uint8_t  sAcc;         // @SAVE (Speed accuracy Estimate * 10 in m/s)
-    uint8_t  fix;          // @SAVE + SEND (GGA fix quality: 0=No Fix, 1=Standard GPS (2D/3D), 2=Differential GPS, 6=Estimated (DR))
+    int32_t latitude;     // @SAVE + SEND (deg * 1e-7, + = N)
+    int32_t longitude;    // @SAVE + SEND (deg * 1e-7, + = E)
+    float   altitude;     // @SAVE + SEND (m above known altitude, hMSL)
+    float   vel_vertical; // @SAVE + SEND (m/s)
+    uint8_t sAcc;         // @SAVE (Speed Accuracy Estimate * 10 in m/s)
+    uint8_t fix;          // @SAVE + SEND (GGA fix quality: 0=No Fix, 1=Standard GPS (2D/3D), 2=Differential GPS, 6=Estimated (DR))
 } gps_sample_t;
 
 // BMP390 sample buffer
@@ -210,7 +209,7 @@ typedef struct __attribute__((packed)) {
     uint32_t time;
 
     float   pressure;
-    float   latitude, longitude;
+    int32_t latitude, longitude;
     float   gps_altitude, gps_vel_vertical;
     int16_t accel_x, accel_y, accel_z;
     int16_t gyro_x, gyro_y, gyro_z;
@@ -229,7 +228,7 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     uint32_t time;
 
-    float    latitude, longitude;
+    int32_t  latitude, longitude;
     uint16_t kf_altitude, kf_apogee; // m * 10 (limited to 6553.5 m)
     int16_t  kf_vel_vertical;        // m/s * 10
     int16_t  q1, q2, q3, q4;         // quaternions * 10 000

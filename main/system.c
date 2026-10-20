@@ -304,10 +304,11 @@ void task_setup(void *pvParameters) {
 
     vTaskDelete(NULL);
 
-setup_error: {
-    status_event_t evt = EVT_SETUP_FAILED;
-    xQueueSend(xEventQueue, &evt, portMAX_DELAY);
-}
+setup_error:
+    {
+        status_event_t evt = EVT_SETUP_FAILED;
+        xQueueSend(xEventQueue, &evt, portMAX_DELAY);
+    }
     vTaskDelete(NULL);
 }
 
@@ -345,7 +346,7 @@ void task_log(void *pvParameters) {
                  "\tGyro (°/s):\t\tgx: %.2f, gy: %.2f, gz: %.2f\r\n"
                  "\tMag (µT):\t\tmx: %.2f, my: %.2f, mz: %.2f\r\n"
                  "\t|Accel| (g):\t\t%.1f\r\n"
-                 "\tGPS coord (°):\t\tLat: %.5f, Lon: %.5f\r\n"
+                 "\tGPS coord (°):\t\tLat: %.7f, Lon: %.7f\r\n"
                  "\tGPS altitude (m):\t%.2f\r\n"
                  "\tGPS velZ (m/s):\t\t%.2f\r\n"
                  "\tGPS sAcc (m/s):\t\t%.1f\r\n"
@@ -361,7 +362,7 @@ void task_log(void *pvParameters) {
                  data.time, flight_state_to_string(data.flight_state), data.voltage * 0.1f, data.bmp.pressure, data.bmp.altitude,
                  data.icm.accel_x * ACC_SCALE, data.icm.accel_y * ACC_SCALE, data.icm.accel_z * ACC_SCALE, data.icm.gyro_x * GYRO_SCALE,
                  data.icm.gyro_y * GYRO_SCALE, data.icm.gyro_z * GYRO_SCALE, data.icm.mag_x * MAG_SCALE, data.icm.mag_y * MAG_SCALE,
-                 data.icm.mag_z * MAG_SCALE, data.icm.accel * 0.1f, data.gps.latitude, data.gps.longitude, data.gps.altitude,
+                 data.icm.mag_z * MAG_SCALE, data.icm.accel * 0.1f, data.gps.latitude / 1e7, data.gps.longitude / 1e7, data.gps.altitude,
                  data.gps.vel_vertical, data.gps.sAcc * 0.1f, data.gps.fix, data.icm.q1, data.icm.q2, data.icm.q3, data.icm.q4, data.kf.x.h,
                  data.kf.x.vz, data.kf.x.apogee, data.kf.x.ba, data.kf.x.bb, data.kf.x.θe);
         vTaskDelay(pdMS_TO_TICKS(300));
