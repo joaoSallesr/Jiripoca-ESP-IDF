@@ -5,7 +5,7 @@ static const char *TAG_GPS = "GPS";
 /* GPS CONFIGURATION */
 #define UBX_SYNC1       0xB5
 #define UBX_SYNC2       0x62
-#define UBX_MAX_PAYLOAD 64
+#define UBX_MAX_PAYLOAD 256
 #define UBX_HDR_LEN     4 // class, id, len_l, len_h
 #define UBX_CK_LEN      2
 
@@ -44,9 +44,11 @@ static struct {
 } ack_state;
 
 static struct {
-    uint8_t  numSV; // Satellites used
-    uint16_t pDOP;  // x0.01
-    bool     valid; // Connection established
+    uint8_t  numSV;         // Satellites used
+    uint16_t pDOP;          // x0.01
+    bool     valid;         // Connection established
+    char     swVersion[30]; // Software Version
+    char     hwVersion[10]; // Hardware Version
 } gps_info;
 
 static struct {
@@ -239,6 +241,15 @@ static void ubx_handle_message(uint8_t class, uint8_t id, const uint8_t *payload
 
         return;
     }
+
+    /* MON-VER */
+    if (class == 0x0A && id == 0x04 && len >= 40) {
+        memcpy(gps_info.swVersion, &payload[0], 30);
+        memcpy(gps_info.hwVersion, &payload[30], 10);
+
+        ESP_LOGI(TAG_GPS, "Software: %s, Hardware: %s", gps_info.swVersion, gps_info.hwVersion);
+        return;
+    }
 }
 
 static void ubx_parse_message(uint8_t c, gps_sample_t *gps) {
@@ -385,6 +396,9 @@ void task_gps(void *pvParameters) {
 
     uint8_t      rx_buffer[GPS_RX_CHUNK];
     gps_sample_t gps = {0};
+
+    // Get GPS Software / Hardware Version
+    ubx_send(0x0A, 0x04, NULL, 0);
 
     while (true) {
         // Read bytes from UART in chunks. The parsers handle partial data.
