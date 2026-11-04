@@ -1,0 +1,29 @@
+CompileFlags:
+  Add:
+    - "-Imain/tests"
+    - "-Imain/tests/stubs"
+    - "-Imain"
+
+---
+
+# Override for test files: remove ESP-IDF FreeRTOS includes to avoid conflicts
+# with stubs, and ensure stubs directory is searched first
+If:
+  PathMatch: main/tests/.*\.c
+CompileFlags:
+  Compiler: clang
+  Remove:
+    - "-I*freertos*"
+    - "-I*esp-idf*"
+    - "-I*build/config*"
+    - "-D*CONFIG_*"
+    - "-target"
+    - "--target=*"
+    - "-march=*"
+    - "-mcpu=*"
+    - "@*"
+  Add:
+    - "-Imain/tests/stubs"
+    - "-Imain/tests"
+    - "-Imain"
+    - "-DCONFIG_FREERTOS_NUMBER_OF_CORES=1"
