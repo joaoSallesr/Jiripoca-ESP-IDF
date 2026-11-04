@@ -32,7 +32,7 @@ static void rotateToWorld(float qw, float qx, float qy, float qz, float a_s[3], 
     a_w[2] = R31 * a_s[0] + R32 * a_s[1] + R33 * a_s[2] - G;
 }
 
-static void icm_init(icm20948_device_t *icm_dev) {
+static esp_err_t icm_init(icm20948_device_t *icm_dev) {
     // ICM20948 struct setup
     icm20948_config_i2c_t icm_config = {
         .i2c_addr        = ICM20948_I2C_ADDRESS,
@@ -114,11 +114,17 @@ static void icm_init(icm20948_device_t *icm_dev) {
     xSemaphoreTake(xI2CSem, portMAX_DELAY);
     ICM_ERROR_CHECK(icm20948_init_magnetometer(icm_dev));
     xSemaphoreGive(xI2CSem);
+
+    return ESP_OK;
 }
 
 void task_fusion(void *pvParameters) {
     icm20948_device_t icm_dev;
-    icm_init(&icm_dev);
+    if (icm_init(&icm_dev) != ESP_OK) {
+        ESP_LOGE(TAG, "ICM20948 initialization failed — task_fusion will not run");
+        vTaskDelete(NULL);
+        return;
+    }
 
     TickType_t       xLastWakeTime;
     const TickType_t xFrequency = pdMS_TO_TICKS(ICM_SAMPLE_RATE_S * 1000);

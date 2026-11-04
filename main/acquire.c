@@ -107,22 +107,24 @@ void task_acquire(void *pvParameters) {
         xTaskNotifyGive(xTaskFlightControl);
 
         switch (notifiedValue) {
-        case ICM_BIT:
+        case ICM_BIT: {
             // Trust accelerometer less due to vibration if in boost phase
             float xQ = data.flight_state == STATE_BOOST ? 25.0f : 1.0f;
             eskf_predict(&data.kf, data.icm.az, xQ);
             break;
+        }
         case BMP_BIT:
             if (!eskf_update_bar(&data.kf, data.bmp.altitude, 1.0f))
                 ESP_LOGW(TAG_ACQ, "kf_update_bar skipped");
             break;
-        case GPS_BIT:
+        case GPS_BIT: {
             float sAcc = (float)data.gps.sAcc * 0.1f; // Convert back to m/s
             // Trust GPS less if speed accuracy is greater than threshold (2+sAcc-sACC_THRESHOLD)²
             float xR = (sAcc > sACC_THRESHOLD) ? (2.0f + sAcc - sACC_THRESHOLD) * (2.0f + sAcc - sACC_THRESHOLD) : 1.0f;
             if (!eskf_update_gps(&data.kf, data.gps.altitude, data.gps.vel_vertical, xR))
                 ESP_LOGW(TAG_ACQ, "kf_update_gps skipped");
             break;
+        }
         case ADC_BIT:
             break;
         default:
@@ -137,4 +139,5 @@ void task_acquire(void *pvParameters) {
         data_g = data; // Update global data with latest data
         portEXIT_CRITICAL(&xDATALock);
     }
+    vTaskDelete(NULL);
 }

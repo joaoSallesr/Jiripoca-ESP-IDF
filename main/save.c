@@ -19,7 +19,22 @@
 #define LFS_BUFFER_SIZE 512
 #define LFS_MAX_FLASH   0.9 // max fraction of the LittleFS partition we're allowed to fill
 
+#define LFS_MAX_FLASH   0.9 // max fraction of the LittleFS partition we're allowed to fill
+
 #define FILENAME_LENGTH 32
+#define NVS_NAMESPACE   "storage"
+
+/* ==================================================================== *
+ * Types                                                                 *
+ * ==================================================================== */
+
+typedef struct {
+    uint16_t offset;
+    size_t   size;
+    uint8_t *array;
+} buffer_t;
+
+typedef struct {
 #define NVS_NAMESPACE   "storage"
 
 /* ==================================================================== *
@@ -156,6 +171,7 @@ static esp_err_t sd_mount(storage_device_t *self) {
     };
 
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = false,
         .max_files              = SD_MAX_FILES,
         .allocation_unit_size   = SD_UNIT_SIZE,
@@ -207,7 +223,54 @@ static void sd_finalize(FILE *f, save_t last_sample) {
         size_t written = fwrite(&last_sample, 1, sizeof(save_t), f);
         if (written != sizeof(save_t))
             ESP_LOGE(TAG_SD, "Failed to write pre-launch data to file");
+    esp_err_t err = esp_vfs_fat_sdspi_mount(SD_MOUNT, &host, &slot_config, &mount_config, &state->card);
+    if (err != ESP_OK)
+        return err;
+
+    sdmmc_card_print_info(stdout, state->card);
+    return ESP_OK;
+}
+
+static esp_err_t sd_format(storage_device_t *self) {
+    sd_state_t *state = (sd_state_t *)self->config;
+    return esp_vfs_fat_sdcard_format(SD_MOUNT, state->card);
+}
+
+static void sd_flush(FILE *f) {
+    fflush(f);
+    fsync(fileno(f));
+}
+
+static bool sd_can_write(storage_device_t *self, const buffer_t *buf) {
+    return true; // SD card capacity isn't tracked/limited the way LittleFS flash is
+}
+
+static esp_err_t sd_write(storage_device_t *self, const buffer_t *buf, FILE *f) {
+    sd_state_t *state = (sd_state_t *)self->config;
+
+    esp_err_t err = write_to_file(buf->array, buf->offset, f, self->tag);
+    taskYIELD();
+    if (err != ESP_OK)
+        return err;
+
+    TickType_t now = xTaskGetTickCount();
+    if (now - state->last_sync >= pdMS_TO_TICKS(SD_SYNC_PERIOD_MS)) {
+        sd_flush(f);
+        state->last_sync = now;
+        ESP_LOGD(TAG_SD, "File flushed");
+        taskYIELD();
+    }
+    return ESP_OK;
+}
+
+static void sd_finalize(FILE *f, save_t last_sample) {
+    // Drain any samples buffered before launch and append them to the log.
+    while (xQueueReceive(xB4LaunchQueue, &last_sample, 0) == pdTRUE) {
+        size_t written = fwrite(&last_sample, 1, sizeof(save_t), f);
+        if (written != sizeof(save_t))
+            ESP_LOGE(TAG_SD, "Failed to write pre-launch data to file");
         else
+            ESP_LOGD(TAG_SD, "Pre-launch data written to SD card");
             ESP_LOGD(TAG_SD, "Pre-launch data written to SD card");
     }
     sd_flush(f);
@@ -341,8 +404,18 @@ static void task_finished(const storage_device_t *device, esp_err_t err) {
         ESP_LOGE(device->tag, "Failed: %s", esp_err_to_name(err));
         status_event_t evt = EVT_SETUP_FAILED;
         xQueueSend(xEventQueue, &evt, portMAX_DELAY);
+        ESP_LOGE(device->tag, "Failed: %s", esp_err_to_name(err));
+        status_event_t evt = EVT_SETUP_FAILED;
+        xQueueSend(xEventQueue, &evt, portMAX_DELAY);
     }
 
+    vTaskDelete(NULL);
+}
+
+/* Mounts the backend, formats it if requested, and opens the log file.
+ * Returns ESP_OK with *out_file populated, or an error (caller must bail). */
+static esp_err_t log_task_setup(storage_device_t *device, FILE **out_file) {
+    esp_err_t err = device->mount(device);
     vTaskDelete(NULL);
 }
 
@@ -353,13 +426,22 @@ static esp_err_t log_task_setup(storage_device_t *device, FILE **out_file) {
     if (err != ESP_OK) {
         ESP_LOGE(device->tag, "Failed to mount");
         return err;
+        ESP_LOGE(device->tag, "Failed to mount");
+        return err;
     }
     ESP_LOGI(device->tag, "Filesystem mounted");
 
     if (file_counter_g.format) {
         ESP_LOGW(device->tag, "Format mode enabled");
         err = device->format(device);
+    ESP_LOGI(device->tag, "Filesystem mounted");
+
+    if (file_counter_g.format) {
+        ESP_LOGW(device->tag, "Format mode enabled");
+        err = device->format(device);
         if (err != ESP_OK) {
+            ESP_LOGE(device->tag, "Failed to format");
+            return err;
             ESP_LOGE(device->tag, "Failed to format");
             return err;
         }
@@ -405,6 +487,8 @@ static void log_task_teardown(storage_device_t *device, buffer_t *buf, FILE *f, 
 
     device->finalize(f, last_sample);
     fclose(f);
+
+    taskYIELD();
 
     taskYIELD();
     vTaskDelay(pdMS_TO_TICKS(20));
@@ -465,6 +549,9 @@ void task_nvs(void *pvParameters) {
     xEventGroupWaitBits(xNVSCounterEventGroup, save_bits, pdTRUE, pdTRUE, portMAX_DELAY);
 
     ESP_LOGI(TAG_NVS, "Starting NVS file counter update");
+
+    nvs_handle_t nvs_handle;
+    nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
 
     nvs_handle_t nvs_handle;
     nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);

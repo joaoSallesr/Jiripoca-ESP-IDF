@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esp_bit_defs.h"
 #include <math.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -100,16 +101,16 @@
 
 /* INIT FLAGS */
 // separar estados do foguete e estados de inicialização dos componentes e afins
-#define BMP_INIT  BIT(0)
-#define MS_INIT   BIT(1)
-#define LSM_INIT  BIT(2)
-#define BMM_INIT  BIT(3)
-#define HX_INIT   BIT(4)
-#define SD_INIT   BIT(5)
-#define LFS_INIT  BIT(6)
-#define LORA_INIT BIT(7)
-#define GPS_INIT  BIT(8)
-
+#define BMP_INIT   BIT(0)
+#define MS_INIT    BIT(1)
+#define LSM_INIT   BIT(2)
+#define BMM_INIT   BIT(3)
+#define HX_INIT    BIT(4)
+#define SD_INIT    BIT(5)
+#define LFS_INIT   BIT(6)
+#define LORA_INIT  BIT(7)
+#define GPS_INIT   BIT(8)
+#define BUS_READY  BIT(9) // <- para funcionar com o wokwi, mas boa adicao de qlqr forma
 #define SETUP_INIT (BMP_INIT | MS_INIT | LSM_INIT | BMM_INIT | HX_INIT | SD_INIT | LFS_INIT | LORA_INIT | GPS_INIT)
 
 /* SAVE FLAGS */
