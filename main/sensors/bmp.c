@@ -43,10 +43,15 @@ static void bmp_init(bmp390_handle_t *bmp_hdl) {
     // bmp_cfg.iir_filter = BMP390_IIR_FILTER_1;
 
     xSemaphoreTake(xI2CSem, portMAX_DELAY);
-    ESP_ERROR_CHECK(bmp390_init(bus_handle, &bmp_cfg, bmp_hdl));
+    esp_err_t err = bmp390_init(bus_handle, &bmp_cfg, bmp_hdl);
     xSemaphoreGive(xI2CSem);
 
-    ESP_LOGI(TAG_BMP, "BMP390 initialized");
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "BMP390 init failed (%s) — task will not start", esp_err_to_name(err));
+        return; /* bmp_hdl stays NULL; task_bmp will detect and delete itself */
+    }
+
+    ESP_LOGI(TAG, "BMP390 initialized");
     vTaskDelay(pdMS_TO_TICKS(100)); // wait for parameter changes ((1 + IIR_COEFF) * T_OS + 2.5 ms ?)
 
     // Configuration registers
@@ -76,8 +81,15 @@ static void bmp_init(bmp390_handle_t *bmp_hdl) {
 }
 
 void task_bmp(void *pvParameters) {
-    bmp390_handle_t bmp_hdl;
+    bmp390_handle_t bmp_hdl = NULL;
+
     bmp_init(&bmp_hdl);
+
+    if (bmp_hdl == NULL) {
+        ESP_LOGE(TAG, "BMP390 initialization failed. Terminating task.");
+        vTaskDelete(NULL);
+        return;
+    }
 
     bmp390_sample_t sample;
 

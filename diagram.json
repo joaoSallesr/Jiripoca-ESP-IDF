@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "author": "Jiripoca Flight Computer",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-s3-devkitc-1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-mpu6050",
+      "id": "icm20948",
+      "top": 60,
+      "left": 300,
+      "attrs": { "i2cAddress": "0x68" }
+    },
+    {
+      "type": "wokwi-bmp280",
+      "id": "bmp390",
+      "top": 160,
+      "left": 300,
+      "attrs": { "i2cAddress": "0x77" }
+    },
+    {
+      "type": "wokwi-microsd-card",
+      "id": "sd1",
+      "top": 260,
+      "left": 300,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": -80,
+      "left": 520,
+      "attrs": { "color": "green" }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "bz1",
+      "top": 0,
+      "left": 520,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_rbf",
+      "top": 180,
+      "left": 520,
+      "attrs": { "color": "red" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_boot",
+      "top": 260,
+      "left": 520,
+      "attrs": { "color": "gray" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_vin1",
+      "top": 340,
+      "left": 400,
+      "attrs": { "value": "10000" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_vin2",
+      "top": 380,
+      "left": 400,
+      "attrs": { "value": "20000" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_drogue",
+      "top": 200,
+      "left": -120,
+      "attrs": { "color": "orange" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led_main",
+      "top": 280,
+      "left": -120,
+      "attrs": { "color": "red" }
+    }
+  ],
+  "connections": [
+    ["esp:TX", "$serialMonitor:RX", "", []],
+    ["esp:RX", "$serialMonitor:TX", "", []],
+    ["esp:GND.1", "$serialMonitor:GND", "", []],
+
+    ["esp:8", "icm20948:SDA", "green", []],
+    ["esp:9", "icm20948:SCL", "blue", []],
+    ["icm20948:VCC", "esp:3V3.1", "red", []],
+    ["icm20948:GND", "esp:GND.1", "black", []],
+
+    ["esp:8", "bmp390:SDA", "green", []],
+    ["esp:9", "bmp390:SCL", "blue", []],
+    ["bmp390:VCC", "esp:3V3.1", "red", []],
+    ["bmp390:GND", "esp:GND.1", "black", []],
+
+    ["esp:11", "sd1:MOSI", "blue", []],
+    ["esp:13", "sd1:MISO", "green", []],
+    ["esp:12", "sd1:SCK", "yellow", []],
+    ["esp:10", "sd1:CS", "orange", []],
+    ["sd1:VCC", "esp:3V3.1", "red", []],
+    ["sd1:GND", "esp:GND.1", "black", []],
+
+    ["esp:15", "led1:A", "lime", []],
+    ["led1:C", "esp:GND.1", "black", []],
+
+    ["esp:38", "bz1:1", "purple", []],
+    ["bz1:2", "esp:GND.1", "black", []],
+
+    ["esp:4", "btn_rbf:1.r", "orange", []],
+    ["btn_rbf:2.r", "esp:GND.1", "black", []],
+
+    ["esp:0", "btn_boot:1.r", "gray", []],
+    ["btn_boot:2.r", "esp:GND.1", "black", []],
+
+    ["esp:47", "led_drogue:A", "orange", []],
+    ["led_drogue:C", "esp:GND.1", "black", []],
+
+    ["esp:48", "led_main:A", "red", []],
+    ["led_main:C", "esp:GND.1", "black", []],
+
+    ["esp:3V3.1", "r_vin1:1", "red", []],
+    ["r_vin1:2", "r_vin2:1", "yellow", []],
+    ["r_vin2:1", "esp:5", "yellow", []],
+    ["r_vin2:2", "esp:GND.1", "black", []]
+  ]
+}
