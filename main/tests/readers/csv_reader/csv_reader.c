@@ -71,7 +71,7 @@ sensor_log_t *read_csv(const csv_reader_spec_t *spec) {
 
     sensor_log_t *log = malloc(sizeof(sensor_log_t));
     if (!log) {
-        printf("[ERROR Baro Reader] Memory allocation failed for clean log container\n");
+        printf("[ERROR Reader] Memory allocation failed for clean log container\n");
         free(samples);
         return NULL;
     }
@@ -80,6 +80,6 @@ sensor_log_t *read_csv(const csv_reader_spec_t *spec) {
     log->sample_count = count;
     log->sample_size  = spec->sample_size;
 
-    printf("[INFO Baro Reader] Total CLEAN samples loaded: %zu\n", count);
+    printf("[INFO Reader] Total CLEAN samples loaded: %zu\n", count);
     return log;
 }

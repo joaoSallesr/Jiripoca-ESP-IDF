@@ -10,7 +10,6 @@ include_directories(
     readers/accel_sensor_reader
     readers/baro_sensor_reader
     readers/csv_reader
-    readers/flight_log_reader
     ..                  # Pasta 'main'
 )
 
@@ -20,7 +19,7 @@ set(UNITY_SOURCES
 
 add_executable(test_baro
     ${UNITY_SOURCES}
-    test_baro_altitude.c
+    test_baro.c
     readers/baro_sensor_reader/baro_sensor_reader.c
     readers/csv_reader/csv_reader.c
 )
@@ -32,8 +31,9 @@ add_executable(test_accel
     readers/csv_reader/csv_reader.c
 )
 
-add_executable(test_boost
+add_executable(test_gyro
     ${UNITY_SOURCES}
-    test_boost_detection.c
-    readers/flight_log_reader/flight_log_reader.c
+    test_gyro.c
+    readers/gyro_sensor_reader/gyro_sensor_reader.c
+    readers/csv_reader/csv_reader.c
 )

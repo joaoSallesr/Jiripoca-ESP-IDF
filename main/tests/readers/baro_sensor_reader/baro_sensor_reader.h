@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define BARO_DATA_FILEPATH "data/baro.csv"
+#define BARO_DATA_FILEPATH "data/barometers.csv"
 
 typedef struct {
     uint32_t timestamp_ms;

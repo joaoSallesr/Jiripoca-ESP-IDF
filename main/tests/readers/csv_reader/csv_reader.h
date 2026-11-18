@@ -5,6 +5,19 @@
 #define DEFAULT_INITIAL_CAPACITY 512
 
 typedef struct {
+    float x;
+    float y;
+    float z;
+} vect3_t;
+
+typedef struct {
+    float w;
+    float x;
+    float y;
+    float z;
+} quaternion_t;
+
+typedef struct {
     const char *filepath;
     size_t      sample_size;
     int (*parse_line)(const char *raw_csv_row, void *current_slot_address);

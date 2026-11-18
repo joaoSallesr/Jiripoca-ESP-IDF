@@ -3,6 +3,3 @@ idf_component_register(
     INCLUDE_DIRS "." "../../main"
     REQUIRES unity main esp_timer driver esp_adc esp_ringbuf nvs_flash eskf
 )
-
-
-

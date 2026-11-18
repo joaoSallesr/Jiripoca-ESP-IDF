@@ -1,7 +1,5 @@
 #include "baro_sensor_reader.h"
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 static int baro_parse_line(const char *raw_csv_row, void *current_slot_address) {
     float time_sec   = 0.0f;
