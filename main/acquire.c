@@ -95,14 +95,7 @@ void task_acquire(void *pvParameters) {
         portEXIT_CRITICAL(&xADCMutex);
 
         // Update time
-        if (data.gps.utc_time > 1) // Register GPS time only once, if available (not 0 and not 1)
-        {
-            data.time = (uint32_t)(data.gps.utc_time);
-            portENTER_CRITICAL(&xGPSMutex);
-            gps_sample_g.utc_time = 1; // Set to 1 to indicate GPS time has been registered
-            portEXIT_CRITICAL(&xGPSMutex);
-        } else
-            data.time = (uint32_t)(esp_timer_get_time() / 1000UL); // ms since boot
+        data.time = (uint32_t)(esp_timer_get_time() / 1000UL); // ms since boot
 
         xTaskNotifyGive(xTaskFlightControl);
 

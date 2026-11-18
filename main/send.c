@@ -180,9 +180,10 @@ cleanup:
 
     vTaskDelete(NULL);
 
-setup_error: {
-    status_event_t evt = EVT_SETUP_FAILED;
-    xQueueSend(xEventQueue, &evt, portMAX_DELAY);
-}
+setup_error:
+    {
+        status_event_t evt = EVT_SETUP_FAILED;
+        xQueueSend(xEventQueue, &evt, portMAX_DELAY);
+    }
     goto cleanup;
 }

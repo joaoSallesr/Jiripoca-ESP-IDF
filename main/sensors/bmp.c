@@ -2,7 +2,7 @@
 
 #define CALIBRATION_SAMPLES 20
 
-static const char *TAG = "BMP390";
+static const char *TAG_BMP = "BMP390";
 
 // K/m, L: average lapse rate
 static const float medium_lapse_rate = 0.0065f;
@@ -73,11 +73,11 @@ static void bmp_init(bmp390_handle_t *bmp_hdl) {
     bmp390_get_interrupt_control_register(*bmp_hdl, &interrupt_ctrl_reg);
     xSemaphoreGive(xI2CSem);
 
-    ESP_LOGD(TAG, "Configuration (0x%02x): %s", config_reg.reg, uint8_to_binary(config_reg.reg));
-    ESP_LOGD(TAG, "Oversampling  (0x%02x): %s", oversampling_reg.reg, uint8_to_binary(oversampling_reg.reg));
-    ESP_LOGD(TAG, "Data Rate     (0x%02x): %s", output_data_rate_reg.reg, uint8_to_binary(output_data_rate_reg.reg));
-    ESP_LOGD(TAG, "Power Control (0x%02x): %s", power_ctrl_reg.reg, uint8_to_binary(power_ctrl_reg.reg));
-    ESP_LOGD(TAG, "Int Control   (0x%02x): %s", interrupt_ctrl_reg.reg, uint8_to_binary(interrupt_ctrl_reg.reg));
+    ESP_LOGD(TAG_BMP, "Configuration (0x%02x): %s", config_reg.reg, uint8_to_binary(config_reg.reg));
+    ESP_LOGD(TAG_BMP, "Oversampling  (0x%02x): %s", oversampling_reg.reg, uint8_to_binary(oversampling_reg.reg));
+    ESP_LOGD(TAG_BMP, "Data Rate     (0x%02x): %s", output_data_rate_reg.reg, uint8_to_binary(output_data_rate_reg.reg));
+    ESP_LOGD(TAG_BMP, "Power Control (0x%02x): %s", power_ctrl_reg.reg, uint8_to_binary(power_ctrl_reg.reg));
+    ESP_LOGD(TAG_BMP, "Int Control   (0x%02x): %s", interrupt_ctrl_reg.reg, uint8_to_binary(interrupt_ctrl_reg.reg));
 }
 
 void task_bmp(void *pvParameters) {
@@ -99,7 +99,7 @@ void task_bmp(void *pvParameters) {
 
     // Get sea level temperature using KNOWN_ALTITUDE
     sea_temp = KNOWN_TEMPERATURE + 273.15f + (medium_lapse_rate * KNOWN_ALTITUDE);
-    ESP_LOGI(TAG, "Sea level temperature calibrated: %.2f°C", sea_temp - 273.15f);
+    ESP_LOGI(TAG_BMP, "Sea level temperature calibrated: %.2f°C", sea_temp - 273.15f);
 
     while (true) {
         float temperature;
@@ -108,7 +108,7 @@ void task_bmp(void *pvParameters) {
         esp_err_t err = bmp390_get_measurements(bmp_hdl, &temperature, &sample.pressure);
         xSemaphoreGive(xI2CSem);
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Get measurements failed: %s", esp_err_to_name(err));
+            ESP_LOGE(TAG_BMP, "Get measurements failed: %s", esp_err_to_name(err));
             vTaskDelay(pdMS_TO_TICKS(BMP_SAMPLE_RATE_MS));
             continue;
         }
@@ -121,7 +121,7 @@ void task_bmp(void *pvParameters) {
             if (pressure_samples == CALIBRATION_SAMPLES) {
                 float mean_pressure = pressure_sum / pressure_samples;
                 sea_pressure        = mean_pressure / powf((1 - KNOWN_ALTITUDE * medium_lapse_rate / sea_temp), inv_exponent);
-                ESP_LOGI(TAG, "Sea level pressure calibrated: %.2f Pa", sea_pressure);
+                ESP_LOGI(TAG_BMP, "Sea level pressure calibrated: %.2f Pa", sea_pressure);
             }
 
             vTaskDelay(pdMS_TO_TICKS(BMP_SAMPLE_RATE_MS));
