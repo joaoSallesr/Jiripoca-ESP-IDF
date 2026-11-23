@@ -39,6 +39,12 @@ cmake --build build --target test_gyro
 if errorlevel 1 goto build_gyro_failed
 echo [BUILD OK] test_gyro
 
+echo.
+echo [BUILD] test_flight_control
+cmake --build build --target test_flight_control
+if errorlevel 1 goto build_flight_control_failed
+echo [BUILD OK] test_flight_control
+
 echo ====================================
 echo  RODANDO OS TESTES
 echo ====================================
@@ -61,6 +67,11 @@ build\test_gyro.exe
 if errorlevel 1 goto run_gyro_failed
 echo [RUN OK] test_gyro
 
+echo [RUN] test_flight_control
+build\test_flight_control.exe
+if errorlevel 1 goto run_flight_control_failed
+echo [RUN OK] test_flight_control
+
 echo.
 echo ====================================
 echo  FIM DA EXECUCAO
@@ -80,6 +91,10 @@ exit /b 1
 echo [BUILD FAILED] test_gyro
 exit /b 1
 
+:build_flight_control_failed
+echo [BUILD FAILED] test_flight_control
+exit /b 1
+
 :run_baro_failed
 echo [RUN FAILED] test_baro with exit code %ERRORLEVEL%
 exit /b %ERRORLEVEL%
@@ -90,4 +105,8 @@ exit /b %ERRORLEVEL%
 
 :run_gyro_failed
 echo [RUN FAILED] test_gyro with exit code %ERRORLEVEL%
+exit /b %ERRORLEVEL%
+
+:run_flight_control_failed
+echo [RUN FAILED] test_flight_control with exit code %ERRORLEVEL%
 exit /b %ERRORLEVEL%

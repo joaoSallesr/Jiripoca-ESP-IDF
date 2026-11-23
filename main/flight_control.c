@@ -99,8 +99,10 @@ static void drogue_check(float vertical_vel, float current_alt, float apogee, ui
     if (!is_armed || is_drogue_deployed)
         return; // desabilitar deployment
 
-    // Checks if absolute vertical velocity is less than Drogue activation threshold
-    if (fabsf(vertical_vel) < DROGUE_THRESHOLD_VEL) {
+    // Checks if vertical velocity dropped below the Drogue activation threshold (apogee reached).
+    // One-sided on purpose: with |vz| < threshold the window lasts ~2*threshold/g (~100 ms), shorter than
+    // TRANSITION_THRESHOLD_MS (150 ms), so the debounce could never be satisfied and drogue would never fire.
+    if (vertical_vel < DROGUE_THRESHOLD_VEL) {
         // If data holds, checks current altitude relative to apogee and fire pyro
         if (debounce_check(current_time, &db_drogue) && current_alt < apogee) {
             fire_pyro_channel(&pyro_drogue, PYRO_PULSE_MS);
@@ -152,95 +154,98 @@ static void landed_check(float vertical_vel, float acceleration, uint32_t curren
         db_landed = 0;
 }
 
-void task_flight_control(void *pvParameters) {
+void flight_control_step(void) {
     flight_state_t current_state;
     uint32_t       current_time;
 
-    while (true) {
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(STATE_CHECK_MS));
+    portENTER_CRITICAL(&xDATALock);
+    current_state = data_g.flight_state;
+    current_time  = data_g.time;
+    portEXIT_CRITICAL(&xDATALock);
+
+    switch (current_state) {
+    case STATE_IDLE: {
+        rbf_check();
 
         portENTER_CRITICAL(&xDATALock);
-        current_state = data_g.flight_state;
-        current_time  = data_g.time;
+        float vertical_accel = data_g.icm.az;
+        float vertical_vel   = data_g.kf.x.vz;
         portEXIT_CRITICAL(&xDATALock);
 
-        switch (current_state) {
-        case STATE_IDLE: {
-            rbf_check();
+        boost_check(vertical_accel, vertical_vel, current_time);
+        break;
+    }
 
-            portENTER_CRITICAL(&xDATALock);
-            float vertical_accel = data_g.icm.az;
-            float vertical_vel   = data_g.kf.x.vz;
-            portEXIT_CRITICAL(&xDATALock);
+    case STATE_BOOST: {
+        portENTER_CRITICAL(&xDATALock);
+        float vertical_accel = data_g.icm.az;
+        portEXIT_CRITICAL(&xDATALock);
 
-            boost_check(vertical_accel, vertical_vel, current_time);
-            break;
-        }
+        coast_check(vertical_accel, current_time);
+        break;
+    }
 
-        case STATE_BOOST: {
-            portENTER_CRITICAL(&xDATALock);
-            float vertical_accel = data_g.icm.az;
-            portEXIT_CRITICAL(&xDATALock);
+    case STATE_COAST: {
+        portENTER_CRITICAL(&xDATALock);
+        float vertical_vel = data_g.kf.x.vz;
+        float current_alt  = data_g.kf.x.h;
+        float apogee       = data_g.kf.x.apogee;
+        portEXIT_CRITICAL(&xDATALock);
 
-            coast_check(vertical_accel, current_time);
-            break;
-        }
+        drogue_check(vertical_vel, current_alt, apogee, current_time);
+        break;
+    }
 
-        case STATE_COAST: {
-            portENTER_CRITICAL(&xDATALock);
-            float vertical_vel = data_g.kf.x.vz;
-            float current_alt  = data_g.kf.x.h;
-            float apogee       = data_g.kf.x.apogee;
-            portEXIT_CRITICAL(&xDATALock);
+    case STATE_DROGUE: {
+        portENTER_CRITICAL(&xDATALock);
+        float vertical_vel = data_g.kf.x.vz;
+        float current_alt  = data_g.kf.x.h;
+        portEXIT_CRITICAL(&xDATALock);
 
-            drogue_check(vertical_vel, current_alt, apogee, current_time);
-            break;
-        }
+        main_check(vertical_vel, current_alt, current_time);
+        break;
+    }
 
-        case STATE_DROGUE: {
-            portENTER_CRITICAL(&xDATALock);
-            float vertical_vel = data_g.kf.x.vz;
-            float current_alt  = data_g.kf.x.h;
-            portEXIT_CRITICAL(&xDATALock);
+    case STATE_MAIN: {
+        portENTER_CRITICAL(&xDATALock);
+        float vertical_vel = data_g.kf.x.vz;
+        float current_alt  = data_g.kf.x.h;
+        portEXIT_CRITICAL(&xDATALock);
 
-            main_check(vertical_vel, current_alt, current_time);
-            break;
-        }
+        landing_check(vertical_vel, current_alt, current_time);
+        break;
+    }
 
-        case STATE_MAIN: {
-            portENTER_CRITICAL(&xDATALock);
-            float vertical_vel = data_g.kf.x.vz;
-            float current_alt  = data_g.kf.x.h;
-            portEXIT_CRITICAL(&xDATALock);
+    case STATE_LANDING: {
+        portENTER_CRITICAL(&xDATALock);
+        float vertical_vel = data_g.kf.x.vz;
+        float acceleration = data_g.icm.accel;
+        portEXIT_CRITICAL(&xDATALock);
 
-            landing_check(vertical_vel, current_alt, current_time);
-            break;
-        }
+        landed_check(vertical_vel, acceleration, current_time);
+        break;
+    }
 
-        case STATE_LANDING: {
-            portENTER_CRITICAL(&xDATALock);
-            float vertical_vel = data_g.kf.x.vz;
-            float acceleration = data_g.icm.accel;
-            portEXIT_CRITICAL(&xDATALock);
+    case STATE_LANDED: {
 
-            landed_check(vertical_vel, acceleration, current_time);
-            break;
-        }
+        break;
+    }
 
-        case STATE_LANDED: {
+    case STATE_FATAL: {
+        ESP_LOGE(TAG_FLIGHT, "Fatal Error detected");
 
-            break;
-        }
+        break;
+    }
 
-        case STATE_FATAL: {
-            ESP_LOGE(TAG_FLIGHT, "Fatal Error detected");
+    default:
+        ESP_LOGW(TAG_FLIGHT, "Unknown state: %d", current_state);
+        break;
+    }
+}
 
-            break;
-        }
-
-        default:
-            ESP_LOGW(TAG_FLIGHT, "Unknown state: %d", current_state);
-            break;
-        }
+void task_flight_control(void *pvParameters) {
+    while (true) {
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(STATE_CHECK_MS));
+        flight_control_step();
     }
 }

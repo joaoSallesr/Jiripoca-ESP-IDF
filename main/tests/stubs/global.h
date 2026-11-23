@@ -68,8 +68,7 @@ typedef int gpio_num_t;
 #define HIGH 1
 #define LOW  0
 
-#define gpio_set_level(gpio, level) (void)0
-#define gpio_get_level(gpio)        (0)
+// gpio_set_level / gpio_get_level: ver "GPIO stub" abaixo (depois das constantes)
 
 // -- FreeRTOS core types --
 typedef uint8_t  StackType_t;
@@ -166,6 +165,24 @@ static inline void _esp_error_check_failed(esp_err_t err, const char *file, int 
 #define TEMP_OFFSET 21.0f
 #define GYRO_SCALE 1.0f / 65.5f
 #define ACC_SCALE 1.0f / 2048.0f
+
+// ============================================================================
+// GPIO stub (controlavel pelos testes)
+// ============================================================================
+// stub_rbf_level   : nivel lido no pino RBF (1 = Remove Before Flight retirado => arma)
+// stub_gpio_high_count[g] : quantas vezes o pino g foi colocado em HIGH
+#define STUB_GPIO_MAX 64
+static int stub_rbf_level __attribute__((unused)) = 1;
+static int stub_gpio_high_count[STUB_GPIO_MAX] __attribute__((unused));
+
+static inline void stub_gpio_set_level(int gpio, int level) {
+    if (level == HIGH && gpio >= 0 && gpio < STUB_GPIO_MAX)
+        stub_gpio_high_count[gpio]++;
+}
+static inline int stub_gpio_get_level(int gpio) { return (gpio == RBF_GPIO) ? stub_rbf_level : 0; }
+
+#define gpio_set_level(gpio, level) stub_gpio_set_level((gpio), (level))
+#define gpio_get_level(gpio)        stub_gpio_get_level((gpio))
 
 // ============================================================================
 // Sensor bits
@@ -657,10 +674,5 @@ static pyro_channel_t pyro_main;
 static QueueHandle_t     xB4LaunchQueue, xSDQueue, xLittleFSQueue, xLoraQueue;
 static portMUX_TYPE      xDATALock, xBMPMutex, xICMMutex, xGPSMutex, xADCMutex;
 static TaskHandle_t      xTaskFlightControl, xTaskAcquire, xTaskLora;
-
-// ============================================================================
-// Function declarations for code under test
-// ============================================================================
-void boost_status_check(data_t *data);
 
 #endif // GLOBAL_H
